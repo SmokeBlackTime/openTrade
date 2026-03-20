@@ -1,0 +1,20 @@
+[package]
+name = "ot-config"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ot-types = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }
+validator = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

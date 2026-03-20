@@ -1,0 +1,25 @@
+[package]
+name = "ot-market-data"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ot-types = { workspace = true }
+ot-common = { workspace = true }
+ot-config = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+reqwest = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+mockall = { workspace = true }
+rust_decimal_macros = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

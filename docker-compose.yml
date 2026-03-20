@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  opentrade:
+    build: .
+    container_name: opentrade
+    environment:
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - RUST_LOG=info
+    volumes:
+      - opentrade-data:/var/lib/opentrade/data
+      - ./config:/etc/opentrade/config:ro
+    command: ["--config", "/etc/opentrade/config/default.yaml", "paper"]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: opentrade-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: opentrade-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=opentrade
+    restart: unless-stopped
+
+volumes:
+  opentrade-data:

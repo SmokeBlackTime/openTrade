@@ -1,0 +1,140 @@
+# OpenTrade Default Configuration
+# ================================
+# DISCLAIMER: Trading cryptocurrency involves substantial risk of loss.
+# This configuration is for paper trading / testing only.
+# No profitability is guaranteed.
+
+mode: paper
+
+exchange:
+  name: binance
+  use_testnet: true
+  api_key_env: BINANCE_API_KEY
+  api_secret_env: BINANCE_API_SECRET
+  rate_limit_per_minute: 1200
+  recv_window_ms: 5000
+  timeout_secs: 30
+  ws_reconnect_delay_ms: 1000
+  ws_max_reconnect_attempts: 10
+
+symbols:
+  - symbol: BTCUSDT
+    market_type: spot
+    timeframes: ["1h", "4h"]
+    enabled: true
+  - symbol: ETHUSDT
+    market_type: spot
+    timeframes: ["1h"]
+    enabled: true
+
+strategies:
+  - name: trend_btc
+    strategy_type: trend_following
+    enabled: true
+    symbols: ["BTCUSDT"]
+    timeframe: "1h"
+    params:
+      fast_period: 20
+      slow_period: 50
+      rsi_overbought: "70"
+      rsi_oversold: "30"
+      atr_stop_multiplier: "2"
+      atr_target_multiplier: "3"
+      cooldown: 5
+      allow_short: false
+    capital_allocation_pct: "0.4"
+
+  - name: mean_rev_eth
+    strategy_type: mean_reversion
+    enabled: true
+    symbols: ["ETHUSDT"]
+    timeframe: "1h"
+    params:
+      rsi_overbought: "75"
+      rsi_oversold: "25"
+      atr_stop_multiplier: "1.5"
+      cooldown: 3
+      allow_short: false
+    capital_allocation_pct: "0.3"
+
+  - name: breakout_btc
+    strategy_type: breakout
+    enabled: true
+    symbols: ["BTCUSDT"]
+    timeframe: "4h"
+    params:
+      lookback: 20
+      volume_multiplier: "1.5"
+      atr_stop_multiplier: "2"
+      atr_target_multiplier: "3"
+      cooldown: 5
+      allow_short: false
+    capital_allocation_pct: "0.3"
+
+risk:
+  max_position_size_usd: "100000"
+  max_leverage: "3"
+  max_daily_loss_pct: "2"
+  max_drawdown_pct: "10"
+  max_open_positions: 5
+  max_notional_exposure_usd: "500000"
+  max_single_order_usd: "50000"
+  max_trades_per_day: 100
+  max_correlated_exposure_pct: "40"
+  stale_data_max_age_secs: 30
+  max_spread_bps: "50"
+  min_confidence_threshold: "0.6"
+  extreme_volatility_multiplier: "3"
+  max_order_rejections_per_hour: 5
+  max_orders_per_minute: 30
+
+portfolio:
+  initial_capital: "100000"
+  risk_per_trade_pct: "0.5"
+  target_volatility_pct: "15"
+  kelly_fraction: "0.25"
+  max_portfolio_leverage: "2"
+  concentration_limit_pct: "25"
+  correlation_lookback_bars: 100
+  rebalance_threshold_pct: "5"
+
+execution:
+  default_order_type: limit
+  slippage_bps: "5"
+  max_retries: 3
+  retry_delay_ms: 500
+  cancel_timeout_secs: 10
+  reconciliation_interval_secs: 60
+  smart_order_splitting: false
+  max_split_orders: 5
+  min_order_size_usd: "10"
+
+backtest:
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+  fee_rate_bps: "10"
+  slippage_bps: "5"
+  initial_capital: "100000"
+  enable_partial_fills: false
+  latency_ms: 50
+  use_funding_fees: false
+
+storage:
+  database_path: "./data/opentrade.db"
+  data_dir: "./data"
+  journal_enabled: true
+  max_candle_cache_size: 100000
+
+telemetry:
+  log_level: info
+  json_logs: false
+  metrics_enabled: true
+  metrics_port: 9090
+  tracing_enabled: true
+
+features:
+  enable_ml_models: false
+  enable_market_making: false
+  enable_statistical_arbitrage: false
+  enable_smart_order_routing: false
+  enable_monte_carlo_stress: true
