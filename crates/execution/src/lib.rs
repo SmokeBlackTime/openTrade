@@ -45,6 +45,17 @@ pub struct OrderManager {
     active_orders: HashMap<ClientOrderId, TrackedOrder>,
     completed_orders: Vec<TrackedOrder>,
     max_completed_history: usize,
+    /// Bracket orders: maps entry order ID -> (stop_loss_order_id, take_profit_order_id)
+    bracket_orders: HashMap<ClientOrderId, BracketPair>,
+}
+
+/// A pair of stop-loss and take-profit orders associated with an entry.
+#[derive(Debug, Clone)]
+pub struct BracketPair {
+    pub entry_order_id: ClientOrderId,
+    pub stop_loss_order_id: Option<ClientOrderId>,
+    pub take_profit_order_id: Option<ClientOrderId>,
+    pub symbol: Symbol,
 }
 
 impl OrderManager {
@@ -53,6 +64,7 @@ impl OrderManager {
             active_orders: HashMap::new(),
             completed_orders: Vec::new(),
             max_completed_history: max_history,
+            bracket_orders: HashMap::new(),
         }
     }
 
@@ -67,6 +79,36 @@ impl OrderManager {
         );
         self.active_orders
             .insert(order.client_order_id.clone(), order);
+    }
+
+    /// Register bracket orders for an entry.
+    pub fn register_bracket(&mut self, bracket: BracketPair) {
+        info!(
+            entry = %bracket.entry_order_id,
+            sl = ?bracket.stop_loss_order_id,
+            tp = ?bracket.take_profit_order_id,
+            "Bracket orders registered"
+        );
+        self.bracket_orders
+            .insert(bracket.entry_order_id.clone(), bracket);
+    }
+
+    /// Get the bracket pair for an entry order.
+    pub fn get_bracket(&self, entry_order_id: &ClientOrderId) -> Option<&BracketPair> {
+        self.bracket_orders.get(entry_order_id)
+    }
+
+    /// Find bracket pair that contains this order (as SL or TP).
+    pub fn find_bracket_containing(&self, order_id: &ClientOrderId) -> Option<&BracketPair> {
+        self.bracket_orders.values().find(|b| {
+            b.stop_loss_order_id.as_ref() == Some(order_id)
+                || b.take_profit_order_id.as_ref() == Some(order_id)
+        })
+    }
+
+    /// Remove bracket orders for a closed position.
+    pub fn remove_bracket(&mut self, entry_order_id: &ClientOrderId) -> Option<BracketPair> {
+        self.bracket_orders.remove(entry_order_id)
     }
 
     /// Update order status from exchange.
@@ -116,6 +158,16 @@ impl OrderManager {
     pub fn recent_completed(&self, n: usize) -> Vec<&TrackedOrder> {
         let start = self.completed_orders.len().saturating_sub(n);
         self.completed_orders[start..].iter().collect()
+    }
+
+    /// Get a mutable reference to an active order.
+    pub fn get_active_mut(&mut self, id: &ClientOrderId) -> Option<&mut TrackedOrder> {
+        self.active_orders.get_mut(id)
+    }
+
+    /// Get all bracket pairs.
+    pub fn all_brackets(&self) -> Vec<&BracketPair> {
+        self.bracket_orders.values().collect()
     }
 }
 
@@ -171,7 +223,6 @@ mod tests {
     fn track_and_complete_order() {
         let mut mgr = OrderManager::new(100);
         let mut order = test_order();
-        let id = order.client_order_id.clone();
 
         mgr.track_order(order.clone());
         assert_eq!(mgr.active_count(), 1);
@@ -190,5 +241,24 @@ mod tests {
         let eth = Symbol::new("ETHUSDT");
         assert_eq!(mgr.active_orders_for_symbol(&btc).len(), 1);
         assert_eq!(mgr.active_orders_for_symbol(&eth).len(), 0);
+    }
+
+    #[test]
+    fn bracket_registration() {
+        let mut mgr = OrderManager::new(100);
+        let entry_id = ClientOrderId::generate();
+        let sl_id = ClientOrderId::generate();
+        let tp_id = ClientOrderId::generate();
+
+        mgr.register_bracket(BracketPair {
+            entry_order_id: entry_id.clone(),
+            stop_loss_order_id: Some(sl_id.clone()),
+            take_profit_order_id: Some(tp_id.clone()),
+            symbol: Symbol::new("BTCUSDT"),
+        });
+
+        assert!(mgr.get_bracket(&entry_id).is_some());
+        assert!(mgr.find_bracket_containing(&sl_id).is_some());
+        assert!(mgr.find_bracket_containing(&tp_id).is_some());
     }
 }

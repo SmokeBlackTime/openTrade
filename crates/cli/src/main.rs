@@ -11,7 +11,7 @@ use clap::{Parser, Subcommand};
 use rust_decimal_macros::dec;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 #[derive(Parser)]
 #[command(
@@ -226,6 +226,22 @@ async fn cmd_doctor(config: &ot_config::AppConfig) -> Result<()> {
         Err(e) => println!("[FAIL] Storage: {}", e),
     }
 
+    // Check exchange connectivity
+    let api_key = config.resolve_api_key().unwrap_or_default();
+    let api_secret = config.resolve_api_secret().unwrap_or_default();
+    let client = ot_exchange_binance::BinanceClient::new(
+        api_key.clone(),
+        api_secret.clone(),
+        config.exchange.use_testnet,
+    );
+
+    for sym_config in &config.symbols {
+        match client.get_price(sym_config.symbol.as_str()).await {
+            Ok(price) => println!("[OK] {} price: ${}", sym_config.symbol, price),
+            Err(e) => println!("[WARN] {} price fetch failed: {}", sym_config.symbol, e),
+        }
+    }
+
     // Risk limits summary
     println!("\nRisk Limits:");
     println!("  Max leverage: {}", config.risk.max_leverage);
@@ -268,6 +284,30 @@ async fn cmd_status(config: &ot_config::AppConfig) -> Result<()> {
             .collect::<Vec<_>>()
             .join(", ")
     );
+
+    // Load stored state if available
+    let storage_path = std::path::Path::new(&config.storage.database_path);
+    if let Ok(storage) = ot_storage::Storage::new(storage_path) {
+        if let Ok(Some(equity)) = storage.get_state("current_equity") {
+            println!("Stored equity: ${}", equity);
+        }
+        if let Ok(Some(pnl)) = storage.get_state("daily_pnl") {
+            println!("Stored daily PnL: ${}", pnl);
+        }
+        if let Ok(Some(positions)) = storage.get_state("open_positions") {
+            if let Ok(pos_vec) = serde_json::from_str::<Vec<ot_types::positions::Position>>(&positions) {
+                let open: Vec<_> = pos_vec.iter().filter(|p| !p.is_flat()).collect();
+                println!("Open positions: {}", open.len());
+                for p in &open {
+                    println!(
+                        "  {} {:?} {} @ {} (unrealized: ${})",
+                        p.symbol, p.side, p.quantity, p.entry_price, p.unrealized_pnl
+                    );
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -307,24 +347,50 @@ async fn cmd_ingest(
         symbol, timeframe, start, end
     );
 
-    let candles = client
-        .get_klines(
-            symbol,
-            timeframe,
-            Some(ot_common::time_utils::datetime_to_ms(&start_dt)),
-            Some(ot_common::time_utils::datetime_to_ms(&end_dt)),
-            Some(1000),
-        )
-        .await
-        .context("Failed to fetch candles")?;
+    let mut all_candles = Vec::new();
+    let mut current_start = ot_common::time_utils::datetime_to_ms(&start_dt);
+    let end_ms = ot_common::time_utils::datetime_to_ms(&end_dt);
 
-    println!("Fetched {} candles", candles.len());
+    // Paginate through klines
+    loop {
+        if current_start >= end_ms {
+            break;
+        }
+
+        let candles = client
+            .get_klines(
+                symbol,
+                timeframe,
+                Some(current_start),
+                Some(end_ms),
+                Some(1000),
+            )
+            .await
+            .context("Failed to fetch candles")?;
+
+        if candles.is_empty() {
+            break;
+        }
+
+        let last_close = ot_common::time_utils::datetime_to_ms(
+            &candles.last().unwrap().close_time,
+        );
+        current_start = last_close + 1;
+
+        println!("  Fetched {} candles (total: {})", candles.len(), all_candles.len() + candles.len());
+        all_candles.extend(candles);
+
+        // Rate limit
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    println!("Fetched {} candles total", all_candles.len());
 
     // Store
     let storage_path = std::path::Path::new(&config.storage.database_path);
     let storage = ot_storage::Storage::new(storage_path)
         .context("Failed to initialize storage")?;
-    let stored = storage.store_candles(&candles)?;
+    let stored = storage.store_candles(&all_candles)?;
     println!("Stored {} candles to database", stored);
 
     Ok(())
@@ -434,19 +500,8 @@ async fn cmd_backtest(
     Ok(())
 }
 
-async fn cmd_paper(config: &ot_config::AppConfig, run_id: Option<String>) -> Result<()> {
-    let run = run_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    info!(run_id = %run, "Starting paper trading");
-    println!("Paper trading mode - Run ID: {}", run);
-    println!("Press Ctrl+C to stop.\n");
-
-    let exchange = Arc::new(ot_paper::PaperExchange::new(
-        config.portfolio.initial_capital,
-        config.execution.slippage_bps,
-        dec!(10),
-    ));
-
-    let strategies: Vec<Box<dyn ot_strategy::Strategy>> = config
+fn build_strategies(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::Strategy>> {
+    config
         .strategies
         .iter()
         .filter(|s| s.enabled)
@@ -461,21 +516,132 @@ async fn cmd_paper(config: &ot_config::AppConfig, run_id: Option<String>) -> Res
                 _ => Box::new(ot_strategy::trend::TrendFollowing::new(&s.params)),
             }
         })
-        .collect();
+        .collect()
+}
 
-    let _engine = ot_live::TradingEngine::new(config.clone(), strategies, exchange);
+async fn cmd_paper(config: &ot_config::AppConfig, run_id: Option<String>) -> Result<()> {
+    let run = run_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    info!(run_id = %run, "Starting paper trading");
+    println!("Paper trading mode - Run ID: {}", run);
+    println!("Press Ctrl+C to stop.\n");
 
-    println!("Engine initialized with {} strategies", config.strategies.len());
-    println!("Waiting for market data...\n");
+    let exchange = Arc::new(ot_paper::PaperExchange::new(
+        config.portfolio.initial_capital,
+        config.execution.slippage_bps,
+        dec!(10),
+    ));
 
-    // In a full implementation, this would subscribe to WebSocket streams
-    // and feed candles to the engine. For now, we show the structure.
-    println!("Paper trading engine ready.");
-    println!("Connect to exchange WebSocket to begin receiving data.");
+    let strategies = build_strategies(config);
 
-    // Graceful shutdown on Ctrl+C
-    tokio::signal::ctrl_c().await?;
-    println!("\nShutting down paper trading...");
+    let mut engine = ot_live::TradingEngine::new(config.clone(), strategies, exchange.clone());
+
+    // Restore state from previous session
+    if let Err(e) = engine.restore_state() {
+        warn!(error = %e, "Failed to restore state, starting fresh");
+    }
+
+    let num_strategies = config.strategies.iter().filter(|s| s.enabled).count();
+    println!("Engine initialized with {} strategies", num_strategies);
+    println!("Subscribing to market data...\n");
+
+    // Subscribe to WebSocket candle streams for each configured symbol/timeframe
+    let mut candle_receivers = Vec::new();
+    for sym_config in &config.symbols {
+        if !sym_config.enabled {
+            continue;
+        }
+        for tf in &sym_config.timeframes {
+            let interval = tf.as_binance_str();
+            match ot_exchange_binance::ws::subscribe_klines(
+                sym_config.symbol.as_str(),
+                interval,
+                config.exchange.use_testnet,
+                100,
+            )
+            .await
+            {
+                Ok(rx) => {
+                    println!(
+                        "  Subscribed to {} {} candles",
+                        sym_config.symbol, interval
+                    );
+                    candle_receivers.push(rx);
+                }
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        symbol = %sym_config.symbol,
+                        timeframe = interval,
+                        "Failed to subscribe to candle stream"
+                    );
+                }
+            }
+        }
+    }
+
+    if candle_receivers.is_empty() {
+        println!("WARNING: No candle streams subscribed. Check exchange connectivity.");
+        println!("Waiting for Ctrl+C...");
+        tokio::signal::ctrl_c().await?;
+        return Ok(());
+    }
+
+    println!("\nTrading engine running. Waiting for candles...");
+
+    // Merge all candle receivers into one stream
+    let (merged_tx, mut merged_rx) = tokio::sync::mpsc::channel::<ot_types::market::Candle>(500);
+
+    for mut rx in candle_receivers {
+        let tx = merged_tx.clone();
+        tokio::spawn(async move {
+            while let Some(candle) = rx.recv().await {
+                if tx.send(candle).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    drop(merged_tx); // Drop the original sender so merged_rx closes when all spawned tasks end
+
+    // Reconciliation ticker
+    let reconcile_interval = config.execution.reconciliation_interval_secs;
+
+    // Main event loop
+    let mut reconcile_timer = tokio::time::interval(
+        std::time::Duration::from_secs(reconcile_interval),
+    );
+
+    loop {
+        tokio::select! {
+            Some(candle) = merged_rx.recv() => {
+                // Update paper exchange price for fills
+                exchange.set_price(candle.symbol.as_str(), candle.close);
+
+                info!(
+                    symbol = %candle.symbol,
+                    timeframe = %candle.timeframe,
+                    close = %candle.close,
+                    volume = %candle.volume,
+                    "Candle received"
+                );
+
+                if let Err(e) = engine.on_candle(candle).await {
+                    error!(error = %e, "Error processing candle");
+                }
+            }
+            _ = reconcile_timer.tick() => {
+                if let Err(e) = engine.reconcile().await {
+                    warn!(error = %e, "Reconciliation error");
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                println!("\nShutting down paper trading...");
+                break;
+            }
+        }
+    }
+
+    println!("Paper trading stopped.");
     Ok(())
 }
 
@@ -493,9 +659,7 @@ async fn cmd_live(
         println!("Testnet: {}", config.exchange.use_testnet);
         println!("Capital: ${}", config.portfolio.initial_capital);
         println!();
-        println!(
-            "To proceed, re-run with --confirm flag."
-        );
+        println!("To proceed, re-run with --confirm flag.");
         println!();
         println!(
             "DISCLAIMER: Trading cryptocurrency involves substantial risk of loss."
@@ -510,15 +674,187 @@ async fn cmd_live(
     let run = run_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     info!(run_id = %run, "Starting LIVE trading");
 
+    let api_key = config
+        .resolve_api_key()
+        .context("API key required for live trading")?;
+    let api_secret = config
+        .resolve_api_secret()
+        .context("API secret required for live trading")?;
+
+    let client = ot_exchange_binance::BinanceClient::new(
+        api_key,
+        api_secret,
+        config.exchange.use_testnet,
+    );
+
+    // Start user data stream for order updates
+    let listen_key = client
+        .start_user_data_stream()
+        .await
+        .context("Failed to start user data stream")?;
+    info!(listen_key = %listen_key, "User data stream started");
+
+    let exchange = Arc::new(ot_exchange_binance::BinanceExchangeAdapter::new(
+        ot_exchange_binance::BinanceClient::new(
+            config.resolve_api_key()?,
+            config.resolve_api_secret()?,
+            config.exchange.use_testnet,
+        ),
+    ));
+
+    let strategies = build_strategies(config);
+    let mut engine = ot_live::TradingEngine::new(config.clone(), strategies, exchange);
+
+    // Restore state from previous session
+    if let Err(e) = engine.restore_state() {
+        warn!(error = %e, "Failed to restore state, starting fresh");
+    }
+
     println!("Live trading started. Run ID: {}", run);
     println!("Press Ctrl+C for graceful shutdown.\n");
 
-    tokio::signal::ctrl_c().await?;
-    println!("\nGraceful shutdown...");
+    // Subscribe to candle streams
+    let mut candle_receivers = Vec::new();
+    for sym_config in &config.symbols {
+        if !sym_config.enabled {
+            continue;
+        }
+        for tf in &sym_config.timeframes {
+            let interval = tf.as_binance_str();
+            match ot_exchange_binance::ws::subscribe_klines(
+                sym_config.symbol.as_str(),
+                interval,
+                config.exchange.use_testnet,
+                100,
+            )
+            .await
+            {
+                Ok(rx) => {
+                    info!(symbol = %sym_config.symbol, tf = interval, "Subscribed to candle stream");
+                    candle_receivers.push(rx);
+                }
+                Err(e) => {
+                    error!(error = %e, "Failed to subscribe to candle stream");
+                }
+            }
+        }
+    }
+
+    // Subscribe to user data stream for order updates
+    let mut user_data_rx = ot_exchange_binance::ws::subscribe_user_data(
+        &listen_key,
+        config.exchange.use_testnet,
+        100,
+    )
+    .await
+    .context("Failed to subscribe to user data stream")?;
+
+    // Merge candle receivers
+    let (merged_tx, mut merged_rx) = tokio::sync::mpsc::channel::<ot_types::market::Candle>(500);
+    for mut rx in candle_receivers {
+        let tx = merged_tx.clone();
+        tokio::spawn(async move {
+            while let Some(candle) = rx.recv().await {
+                if tx.send(candle).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    drop(merged_tx);
+
+    // Keepalive for user data stream (every 30 minutes)
+    let keepalive_client = ot_exchange_binance::BinanceClient::new(
+        config.resolve_api_key()?,
+        config.resolve_api_secret()?,
+        config.exchange.use_testnet,
+    );
+    let keepalive_key = listen_key.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+        loop {
+            interval.tick().await;
+            if let Err(e) = keepalive_client
+                .keepalive_user_data_stream(&keepalive_key)
+                .await
+            {
+                error!(error = %e, "Failed to keepalive user data stream");
+            } else {
+                info!("User data stream keepalive sent");
+            }
+        }
+    });
+
+    // Reconciliation interval
+    let reconcile_interval = config.execution.reconciliation_interval_secs;
+    let mut reconcile_timer = tokio::time::interval(
+        std::time::Duration::from_secs(reconcile_interval),
+    );
+
+    // Run initial reconciliation
+    if let Err(e) = engine.reconcile().await {
+        warn!(error = %e, "Initial reconciliation failed");
+    }
+
+    // Main event loop
+    loop {
+        tokio::select! {
+            Some(candle) = merged_rx.recv() => {
+                info!(
+                    symbol = %candle.symbol,
+                    tf = %candle.timeframe,
+                    close = %candle.close,
+                    "Candle received"
+                );
+
+                if let Err(e) = engine.on_candle(candle).await {
+                    error!(error = %e, "Error processing candle");
+                }
+            }
+            Some(order_update) = user_data_rx.recv() => {
+                info!(
+                    id = %order_update.client_order_id,
+                    symbol = %order_update.symbol,
+                    status = ?order_update.status,
+                    filled = %order_update.filled_quantity,
+                    "Order update from exchange"
+                );
+
+                let avg_price = if order_update.filled_quantity > rust_decimal_macros::dec!(0)
+                    && order_update.cumulative_quote_qty > rust_decimal_macros::dec!(0) {
+                    Some(order_update.cumulative_quote_qty / order_update.filled_quantity)
+                } else {
+                    None
+                };
+
+                if let Err(e) = engine.on_order_update(
+                    &order_update.client_order_id,
+                    &order_update.symbol,
+                    order_update.status,
+                    order_update.filled_quantity,
+                    avg_price,
+                    order_update.commission,
+                ).await {
+                    error!(error = %e, "Error processing order update");
+                }
+            }
+            _ = reconcile_timer.tick() => {
+                if let Err(e) = engine.reconcile().await {
+                    warn!(error = %e, "Reconciliation error");
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                println!("\nGraceful shutdown...");
+                break;
+            }
+        }
+    }
+
+    println!("Live trading stopped.");
     Ok(())
 }
 
-async fn cmd_flatten(_config: &ot_config::AppConfig, confirm: bool) -> Result<()> {
+async fn cmd_flatten(config: &ot_config::AppConfig, confirm: bool) -> Result<()> {
     if !confirm {
         println!("EMERGENCY FLATTEN");
         println!("=================");
@@ -526,13 +862,34 @@ async fn cmd_flatten(_config: &ot_config::AppConfig, confirm: bool) -> Result<()
         println!("Re-run with --confirm to execute.");
         return Ok(());
     }
+
     warn!("Executing emergency flatten");
-    println!("All positions flattened (no live connection in this context).");
+
+    let api_key = config.resolve_api_key().unwrap_or_default();
+    let api_secret = config.resolve_api_secret().unwrap_or_default();
+
+    let exchange: Arc<dyn ot_execution::ExchangeAdapter> = if api_key.is_empty() {
+        Arc::new(ot_paper::PaperExchange::new(dec!(0), dec!(0), dec!(0)))
+    } else {
+        Arc::new(ot_exchange_binance::BinanceExchangeAdapter::new(
+            ot_exchange_binance::BinanceClient::new(api_key, api_secret, config.exchange.use_testnet),
+        ))
+    };
+
+    let strategies = build_strategies(config);
+    let mut engine = ot_live::TradingEngine::new(config.clone(), strategies, exchange);
+
+    if let Err(e) = engine.restore_state() {
+        warn!(error = %e, "Could not restore state");
+    }
+
+    engine.flatten_all().await?;
+    println!("All positions flattened.");
     Ok(())
 }
 
 async fn cmd_cancel_all(
-    _config: &ot_config::AppConfig,
+    config: &ot_config::AppConfig,
     symbol: Option<String>,
     confirm: bool,
 ) -> Result<()> {
@@ -547,23 +904,97 @@ async fn cmd_cancel_all(
         println!("Re-run with --confirm to execute.");
         return Ok(());
     }
-    println!("All orders cancelled.");
+
+    let api_key = config
+        .resolve_api_key()
+        .context("API key required")?;
+    let api_secret = config
+        .resolve_api_secret()
+        .context("API secret required")?;
+
+    let client = ot_exchange_binance::BinanceClient::new(
+        api_key,
+        api_secret,
+        config.exchange.use_testnet,
+    );
+
+    let symbols: Vec<String> = if let Some(s) = symbol {
+        vec![s]
+    } else {
+        config
+            .symbols
+            .iter()
+            .map(|s| s.symbol.as_str().to_string())
+            .collect()
+    };
+
+    for sym in &symbols {
+        match client.cancel_all_orders(sym).await {
+            Ok(_) => println!("Cancelled all orders for {}", sym),
+            Err(e) => println!("Failed to cancel orders for {}: {}", sym, e),
+        }
+    }
+
     Ok(())
 }
 
-async fn cmd_explain_last_trade(_config: &ot_config::AppConfig) -> Result<()> {
+async fn cmd_explain_last_trade(config: &ot_config::AppConfig) -> Result<()> {
     println!("Last Trade Explanation");
     println!("======================");
-    println!("No trades recorded in this session.");
-    println!("Start paper or live trading first.");
+
+    let storage_path = std::path::Path::new(&config.storage.database_path);
+    match ot_storage::Storage::new(storage_path) {
+        Ok(storage) => {
+            // Load recent trades from journal
+            if let Ok(Some(positions_json)) = storage.get_state("open_positions") {
+                if let Ok(positions) = serde_json::from_str::<Vec<ot_types::positions::Position>>(&positions_json) {
+                    if positions.is_empty() {
+                        println!("No open positions.");
+                    } else {
+                        for p in &positions {
+                            if !p.is_flat() {
+                                println!("Position: {} {:?}", p.symbol, p.side);
+                                println!("  Entry: ${}", p.entry_price);
+                                println!("  Current: ${}", p.current_price);
+                                println!("  Unrealized PnL: ${}", p.unrealized_pnl);
+                                println!("  Strategy: {}", p.strategy_name);
+                            }
+                        }
+                    }
+                }
+            } else {
+                println!("No trading data available.");
+            }
+        }
+        Err(_) => {
+            println!("No trades recorded. Start paper or live trading first.");
+        }
+    }
+
     Ok(())
 }
 
-async fn cmd_report(_config: &ot_config::AppConfig, days: u32, _format: &str) -> Result<()> {
+async fn cmd_report(config: &ot_config::AppConfig, days: u32, _format: &str) -> Result<()> {
     println!("Performance Report ({} days)", days);
     println!("===========================");
-    println!("No trading data available yet.");
-    println!("Run paper or live trading to generate reports.");
+
+    let storage_path = std::path::Path::new(&config.storage.database_path);
+    match ot_storage::Storage::new(storage_path) {
+        Ok(storage) => {
+            if let Ok(Some(equity)) = storage.get_state("current_equity") {
+                println!("Current equity: ${}", equity);
+            }
+            if let Ok(Some(pnl)) = storage.get_state("daily_pnl") {
+                println!("Today's PnL: ${}", pnl);
+            }
+            println!("(Detailed report requires trade history data)");
+        }
+        Err(_) => {
+            println!("No trading data available yet.");
+            println!("Run paper or live trading to generate reports.");
+        }
+    }
+
     Ok(())
 }
 

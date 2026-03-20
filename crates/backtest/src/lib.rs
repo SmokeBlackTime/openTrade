@@ -20,6 +20,9 @@ use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use tracing::info;
 
+/// Tracks stop-loss and take-profit levels for open backtest positions.
+type StopTargetMap = HashMap<String, (Option<Decimal>, Option<Decimal>)>;
+
 /// Backtest result.
 #[derive(Debug, Clone)]
 pub struct BacktestResult {
@@ -77,6 +80,7 @@ pub fn run_backtest(
     let mut peak_equity = config.initial_capital;
     let mut current_equity = config.initial_capital;
     let mut total_commission = dec!(0);
+    let mut stop_targets: StopTargetMap = HashMap::new();
 
     strategy.reset();
 
@@ -107,8 +111,13 @@ pub fn run_backtest(
         // Check stop loss / take profit
         if let Some(ref pos) = position {
             if !pos.is_flat() {
-                // Check if candle hit stop or target
-                let (should_exit, exit_price) = check_stop_target(pos, candle);
+                let pos_key = format!("{}:{}", pos.symbol, pos.strategy_name);
+                let (sl, tp) = stop_targets
+                    .get(&pos_key)
+                    .copied()
+                    .unwrap_or((None, None));
+
+                let (should_exit, exit_price) = check_stop_target(pos, candle, sl, tp);
                 if should_exit {
                     let fill_price = fill_sim.simulate_fill_price(exit_price, pos.side.exit_side());
                     let commission = fill_sim.compute_commission(pos.quantity * fill_price);
@@ -139,6 +148,7 @@ pub fn run_backtest(
                     closed.side = PositionSide::Flat;
                     closed.quantity = dec!(0);
                     portfolio.update_position(closed);
+                    stop_targets.remove(&pos_key);
                 }
             }
         }
@@ -196,6 +206,12 @@ pub fn run_backtest(
                             };
 
                             portfolio.update_position(new_pos);
+
+                            // Track stop-loss/take-profit for this position
+                            if signal.stop_loss.is_some() || signal.take_profit.is_some() {
+                                let pos_key = format!("{}:{}", candle.symbol, strategy.name());
+                                stop_targets.insert(pos_key, (signal.stop_loss, signal.take_profit));
+                            }
 
                             let trade_side = if signal.direction == SignalDirection::Long {
                                 Side::Buy
@@ -255,6 +271,9 @@ pub fn run_backtest(
                             closed.side = PositionSide::Flat;
                             closed.quantity = dec!(0);
                             portfolio.update_position(closed);
+
+                            let pos_key = format!("{}:{}", candle.symbol, strategy.name());
+                            stop_targets.remove(&pos_key);
                         }
                     }
                 }
@@ -295,19 +314,47 @@ pub fn run_backtest(
     }
 }
 
-fn check_stop_target(pos: &Position, candle: &Candle) -> (bool, Decimal) {
-    // For backtesting, check if candle high/low crossed stop/target
-    // This is an approximation - real markets may gap through
+fn check_stop_target(
+    pos: &Position,
+    candle: &Candle,
+    stop_loss: Option<Decimal>,
+    take_profit: Option<Decimal>,
+) -> (bool, Decimal) {
+    // For backtesting, check if candle high/low crossed stop/target.
+    // This is an approximation - real markets may gap through.
+    // When both SL and TP could trigger on the same bar, assume SL hit first
+    // (conservative: worst-case scenario for the trader).
     match pos.side {
         PositionSide::Long => {
-            // Stop loss hit
-            if candle.low <= pos.entry_price - pos.entry_price * dec!(0.02) {
-                // Using a simple 2% fallback if no explicit stop tracked
-                // In practice, stop would be tracked per-position
+            // Stop loss: candle low went below stop price
+            if let Some(sl) = stop_loss {
+                if candle.low <= sl {
+                    return (true, sl);
+                }
+            }
+            // Take profit: candle high reached target price
+            if let Some(tp) = take_profit {
+                if candle.high >= tp {
+                    return (true, tp);
+                }
             }
             (false, candle.close)
         }
-        PositionSide::Short => (false, candle.close),
+        PositionSide::Short => {
+            // Stop loss: candle high went above stop price
+            if let Some(sl) = stop_loss {
+                if candle.high >= sl {
+                    return (true, sl);
+                }
+            }
+            // Take profit: candle low reached target price
+            if let Some(tp) = take_profit {
+                if candle.low <= tp {
+                    return (true, tp);
+                }
+            }
+            (false, candle.close)
+        }
         PositionSide::Flat => (false, candle.close),
     }
 }

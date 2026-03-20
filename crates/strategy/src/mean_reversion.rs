@@ -14,6 +14,7 @@ use crate::Strategy;
 /// Entry long: price touches lower BB AND RSI < oversold threshold
 /// Entry short: price touches upper BB AND RSI > overbought threshold
 /// Exit: price returns to middle BB or opposite signal
+#[allow(dead_code)]
 pub struct MeanReversion {
     name: String,
     rsi_overbought: Decimal,

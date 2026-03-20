@@ -315,6 +315,175 @@ impl BinanceClient {
             .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))
     }
 
+    /// Query a specific order by client order ID.
+    pub async fn query_order(
+        &self,
+        symbol: &str,
+        client_order_id: &str,
+    ) -> Result<BinanceOrderResponse, OtError> {
+        let mut query = format!(
+            "symbol={}&origClientOrderId={}&recvWindow={}&timestamp={}",
+            symbol, client_order_id, self.recv_window, Self::timestamp_ms()
+        );
+        let signature = sign_query(&query, &self.api_secret);
+        query.push_str(&format!("&signature={}", signature));
+
+        let url = format!("{}/api/v3/order?{}", self.base_url, query);
+        debug!("Querying order: {} {}", symbol, client_order_id);
+
+        let resp = self
+            .http
+            .get(&url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .send()
+            .await
+            .map_err(|e| OtError::Exchange(ExchangeError::Http(e.to_string())))?;
+
+        if !resp.status().is_success() {
+            let body = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown".to_string());
+            return Err(OtError::Exchange(ExchangeError::Http(body)));
+        }
+
+        resp.json()
+            .await
+            .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))
+    }
+
+    /// Get account balance for a specific asset.
+    pub async fn get_account_balance(&self, asset: &str) -> Result<Decimal, OtError> {
+        let mut query = format!(
+            "recvWindow={}&timestamp={}",
+            self.recv_window,
+            Self::timestamp_ms()
+        );
+        let signature = sign_query(&query, &self.api_secret);
+        query.push_str(&format!("&signature={}", signature));
+
+        let url = format!("{}/api/v3/account?{}", self.base_url, query);
+        debug!("Fetching account info");
+
+        let resp = self
+            .http
+            .get(&url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .send()
+            .await
+            .map_err(|e| OtError::Exchange(ExchangeError::Http(e.to_string())))?;
+
+        if !resp.status().is_success() {
+            let body = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown".to_string());
+            return Err(OtError::Exchange(ExchangeError::Http(body)));
+        }
+
+        let account: BinanceAccountInfo = resp
+            .json()
+            .await
+            .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))?;
+
+        for balance in &account.balances {
+            if balance.asset == asset {
+                let free = Decimal::from_str(&balance.free).unwrap_or(Decimal::ZERO);
+                let locked = Decimal::from_str(&balance.locked).unwrap_or(Decimal::ZERO);
+                return Ok(free + locked);
+            }
+        }
+
+        Ok(Decimal::ZERO)
+    }
+
+    /// Get all open orders for a symbol.
+    pub async fn get_open_orders(&self, symbol: &str) -> Result<Vec<BinanceOrderResponse>, OtError> {
+        let mut query = format!(
+            "symbol={}&recvWindow={}&timestamp={}",
+            symbol, self.recv_window, Self::timestamp_ms()
+        );
+        let signature = sign_query(&query, &self.api_secret);
+        query.push_str(&format!("&signature={}", signature));
+
+        let url = format!("{}/api/v3/openOrders?{}", self.base_url, query);
+        debug!("Fetching open orders for {}", symbol);
+
+        let resp = self
+            .http
+            .get(&url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .send()
+            .await
+            .map_err(|e| OtError::Exchange(ExchangeError::Http(e.to_string())))?;
+
+        if !resp.status().is_success() {
+            let body = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown".to_string());
+            return Err(OtError::Exchange(ExchangeError::Http(body)));
+        }
+
+        resp.json()
+            .await
+            .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))
+    }
+
+    /// Start a user data stream (returns listen key).
+    pub async fn start_user_data_stream(&self) -> Result<String, OtError> {
+        let url = format!("{}/api/v3/userDataStream", self.base_url);
+
+        let resp = self
+            .http
+            .post(&url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .send()
+            .await
+            .map_err(|e| OtError::Exchange(ExchangeError::Http(e.to_string())))?;
+
+        if !resp.status().is_success() {
+            let body = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown".to_string());
+            return Err(OtError::Exchange(ExchangeError::Http(body)));
+        }
+
+        let data: BinanceListenKey = resp
+            .json()
+            .await
+            .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))?;
+
+        Ok(data.listen_key)
+    }
+
+    /// Keep alive user data stream.
+    pub async fn keepalive_user_data_stream(&self, listen_key: &str) -> Result<(), OtError> {
+        let url = format!(
+            "{}/api/v3/userDataStream?listenKey={}",
+            self.base_url, listen_key
+        );
+
+        let resp = self
+            .http
+            .put(&url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .send()
+            .await
+            .map_err(|e| OtError::Exchange(ExchangeError::Http(e.to_string())))?;
+
+        if !resp.status().is_success() {
+            let body = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown".to_string());
+            return Err(OtError::Exchange(ExchangeError::Http(body)));
+        }
+
+        Ok(())
+    }
+
     /// Cancel all open orders for a symbol.
     pub async fn cancel_all_orders(&self, symbol: &str) -> Result<(), OtError> {
         let mut query = format!(

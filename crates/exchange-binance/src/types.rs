@@ -114,6 +114,69 @@ pub struct WsKlineData {
     pub quote_volume: String,
 }
 
+/// Binance account info response.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceAccountInfo {
+    pub balances: Vec<BinanceBalance>,
+}
+
+/// Binance listen key response.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceListenKey {
+    pub listen_key: String,
+}
+
+/// User data stream: execution report (order update).
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsExecutionReport {
+    #[serde(rename = "e")]
+    pub event_type: String,
+    #[serde(rename = "E")]
+    pub event_time: i64,
+    #[serde(rename = "s")]
+    pub symbol: String,
+    #[serde(rename = "c")]
+    pub client_order_id: String,
+    #[serde(rename = "S")]
+    pub side: String,
+    #[serde(rename = "o")]
+    pub order_type: String,
+    #[serde(rename = "q")]
+    pub orig_quantity: String,
+    #[serde(rename = "p")]
+    pub price: String,
+    #[serde(rename = "X")]
+    pub order_status: String,
+    #[serde(rename = "i")]
+    pub order_id: u64,
+    #[serde(rename = "l")]
+    pub last_filled_qty: String,
+    #[serde(rename = "L")]
+    pub last_filled_price: String,
+    #[serde(rename = "z")]
+    pub cumulative_filled_qty: String,
+    #[serde(rename = "Z")]
+    pub cumulative_quote_qty: String,
+    #[serde(rename = "n")]
+    pub commission: String,
+    #[serde(rename = "N")]
+    pub commission_asset: Option<String>,
+    #[serde(rename = "T")]
+    pub transaction_time: i64,
+}
+
+/// User data stream events (can be execution report or balance update).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "e")]
+pub enum WsUserDataEvent {
+    #[serde(rename = "executionReport")]
+    ExecutionReport(WsExecutionReport),
+    #[serde(other)]
+    Other,
+}
+
 /// Exchange info for symbol filters.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

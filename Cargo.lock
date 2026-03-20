@@ -1405,6 +1405,7 @@ dependencies = [
  "mockall",
  "ot-common",
  "ot-config",
+ "ot-execution",
  "ot-market-data",
  "ot-types",
  "reqwest",
