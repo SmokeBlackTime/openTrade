@@ -229,10 +229,11 @@ async fn cmd_doctor(config: &ot_config::AppConfig) -> Result<()> {
     // Check exchange connectivity
     let api_key = config.resolve_api_key().unwrap_or_default();
     let api_secret = config.resolve_api_secret().unwrap_or_default();
-    let client = ot_exchange_binance::BinanceClient::new(
+    let client = ot_exchange_binance::BinanceClient::with_base_url(
         api_key.clone(),
         api_secret.clone(),
         config.exchange.use_testnet,
+        config.exchange.base_url.clone(),
     );
 
     for sym_config in &config.symbols {
@@ -322,10 +323,11 @@ async fn cmd_ingest(
 
     let api_key = config.resolve_api_key().unwrap_or_default();
     let api_secret = config.resolve_api_secret().unwrap_or_default();
-    let client = ot_exchange_binance::BinanceClient::new(
+    let client = ot_exchange_binance::BinanceClient::with_base_url(
         api_key,
         api_secret,
         config.exchange.use_testnet,
+        config.exchange.base_url.clone(),
     );
 
     let start_date = NaiveDate::parse_from_str(start, "%Y-%m-%d")
@@ -765,10 +767,11 @@ async fn cmd_live(
         .resolve_api_secret()
         .context("API secret required for live trading")?;
 
-    let client = ot_exchange_binance::BinanceClient::new(
+    let client = ot_exchange_binance::BinanceClient::with_base_url(
         api_key,
         api_secret,
         config.exchange.use_testnet,
+        config.exchange.base_url.clone(),
     );
 
     // Start user data stream for order updates
@@ -779,10 +782,11 @@ async fn cmd_live(
     info!(listen_key = %listen_key, "User data stream started");
 
     let exchange = Arc::new(ot_exchange_binance::BinanceExchangeAdapter::new(
-        ot_exchange_binance::BinanceClient::new(
+        ot_exchange_binance::BinanceClient::with_base_url(
             config.resolve_api_key()?,
             config.resolve_api_secret()?,
             config.exchange.use_testnet,
+            config.exchange.base_url.clone(),
         ),
     ));
 
@@ -848,10 +852,11 @@ async fn cmd_live(
     drop(merged_tx);
 
     // Keepalive for user data stream (every 30 minutes)
-    let keepalive_client = ot_exchange_binance::BinanceClient::new(
+    let keepalive_client = ot_exchange_binance::BinanceClient::with_base_url(
         config.resolve_api_key()?,
         config.resolve_api_secret()?,
         config.exchange.use_testnet,
+        config.exchange.base_url.clone(),
     );
     let keepalive_key = listen_key.clone();
     tokio::spawn(async move {
@@ -956,7 +961,7 @@ async fn cmd_flatten(config: &ot_config::AppConfig, confirm: bool) -> Result<()>
         Arc::new(ot_paper::PaperExchange::new(dec!(0), dec!(0), dec!(0)))
     } else {
         Arc::new(ot_exchange_binance::BinanceExchangeAdapter::new(
-            ot_exchange_binance::BinanceClient::new(api_key, api_secret, config.exchange.use_testnet),
+            ot_exchange_binance::BinanceClient::with_base_url(api_key, api_secret, config.exchange.use_testnet, config.exchange.base_url.clone()),
         ))
     };
 
@@ -996,10 +1001,11 @@ async fn cmd_cancel_all(
         .resolve_api_secret()
         .context("API secret required")?;
 
-    let client = ot_exchange_binance::BinanceClient::new(
+    let client = ot_exchange_binance::BinanceClient::with_base_url(
         api_key,
         api_secret,
         config.exchange.use_testnet,
+        config.exchange.base_url.clone(),
     );
 
     let symbols: Vec<String> = if let Some(s) = symbol {

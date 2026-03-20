@@ -21,11 +21,22 @@ pub struct BinanceClient {
 
 impl BinanceClient {
     pub fn new(api_key: String, api_secret: String, use_testnet: bool) -> Self {
-        let base_url = if use_testnet {
-            "https://testnet.binance.vision".to_string()
-        } else {
-            "https://api.binance.com".to_string()
-        };
+        Self::with_base_url(api_key, api_secret, use_testnet, None)
+    }
+
+    pub fn with_base_url(
+        api_key: String,
+        api_secret: String,
+        use_testnet: bool,
+        custom_base_url: Option<String>,
+    ) -> Self {
+        let base_url = custom_base_url.unwrap_or_else(|| {
+            if use_testnet {
+                "https://testnet.binance.vision".to_string()
+            } else {
+                "https://api.binance.com".to_string()
+            }
+        });
 
         Self {
             http: Client::builder()

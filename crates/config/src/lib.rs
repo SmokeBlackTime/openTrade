@@ -67,6 +67,10 @@ impl std::fmt::Display for TradingMode {
 pub struct ExchangeConfig {
     pub name: String,
     pub use_testnet: bool,
+    /// Optional custom REST API base URL (e.g. "https://api1.binance.com").
+    /// If not set, defaults to api.binance.com or testnet.binance.vision.
+    #[serde(default)]
+    pub base_url: Option<String>,
     /// API key loaded from env var name (not the key itself).
     pub api_key_env: String,
     /// API secret loaded from env var name (not the secret itself).
