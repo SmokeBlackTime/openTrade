@@ -1,8 +1,11 @@
-# OpenTrade Default Configuration
-# ================================
+# OpenTrade Default Configuration — FULL POWER MODE
+# ===================================================
 # DISCLAIMER: Trading cryptocurrency involves substantial risk of loss.
 # This configuration is for paper trading / testing only.
 # No profitability is guaranteed.
+#
+# ALL features enabled. ALL strategies active. Neural brain on aggressive.
+# This is the maximum intelligence configuration.
 
 mode: paper
 
@@ -20,14 +23,19 @@ exchange:
 symbols:
   - symbol: BTCUSDT
     market_type: spot
-    timeframes: ["1h", "4h"]
+    timeframes: ["1m", "5m", "15m", "1h", "4h", "1d"]
     enabled: true
+    max_position_usd: "500000"
+    max_leverage: "10"
   - symbol: ETHUSDT
     market_type: spot
-    timeframes: ["1h"]
+    timeframes: ["1m", "5m", "15m", "1h", "4h", "1d"]
     enabled: true
+    max_position_usd: "300000"
+    max_leverage: "10"
 
 strategies:
+  # ===== CORE STRATEGIES (all enabled, multi-symbol) =====
   - name: trend_btc
     strategy_type: trend_following
     enabled: true
@@ -41,8 +49,37 @@ strategies:
       atr_stop_multiplier: "2"
       atr_target_multiplier: "3"
       cooldown: 5
-      allow_short: false
-    capital_allocation_pct: "0.4"
+      allow_short: true
+    capital_allocation_pct: "0.12"
+
+  - name: trend_eth
+    strategy_type: trend_following
+    enabled: true
+    symbols: ["ETHUSDT"]
+    timeframe: "1h"
+    params:
+      fast_period: 20
+      slow_period: 50
+      rsi_overbought: "70"
+      rsi_oversold: "30"
+      atr_stop_multiplier: "2"
+      atr_target_multiplier: "3"
+      cooldown: 5
+      allow_short: true
+    capital_allocation_pct: "0.08"
+
+  - name: mean_rev_btc
+    strategy_type: mean_reversion
+    enabled: true
+    symbols: ["BTCUSDT"]
+    timeframe: "1h"
+    params:
+      rsi_overbought: "75"
+      rsi_oversold: "25"
+      atr_stop_multiplier: "1.5"
+      cooldown: 3
+      allow_short: true
+    capital_allocation_pct: "0.08"
 
   - name: mean_rev_eth
     strategy_type: mean_reversion
@@ -54,8 +91,8 @@ strategies:
       rsi_oversold: "25"
       atr_stop_multiplier: "1.5"
       cooldown: 3
-      allow_short: false
-    capital_allocation_pct: "0.3"
+      allow_short: true
+    capital_allocation_pct: "0.08"
 
   - name: breakout_btc
     strategy_type: breakout
@@ -68,130 +105,228 @@ strategies:
       atr_stop_multiplier: "2"
       atr_target_multiplier: "3"
       cooldown: 5
-      allow_short: false
-    capital_allocation_pct: "0.3"
+      allow_short: true
+    capital_allocation_pct: "0.08"
 
-  # --- Advanced AI-driven strategies ---
+  - name: breakout_eth
+    strategy_type: breakout
+    enabled: true
+    symbols: ["ETHUSDT"]
+    timeframe: "4h"
+    params:
+      lookback: 20
+      volume_multiplier: "1.5"
+      atr_stop_multiplier: "2"
+      atr_target_multiplier: "3"
+      cooldown: 5
+      allow_short: true
+    capital_allocation_pct: "0.06"
+
+  # ===== ADVANCED AI-DRIVEN STRATEGIES (all enabled) =====
   - name: funding_rate_btc
     strategy_type: funding_rate
-    enabled: false
+    enabled: true
     symbols: ["BTCUSDT"]
     timeframe: "1h"
     params:
-      entry_threshold: "0.0005"
-      extreme_threshold: "0.001"
+      entry_threshold: "0.0003"
+      extreme_threshold: "0.0008"
       rsi_confirm_min: "30"
       rsi_confirm_max: "70"
       atr_stop_multiplier: "2"
       atr_target_multiplier: "2.5"
       max_hold_bars: 24
-      cooldown: 8
-    capital_allocation_pct: "0.15"
+      cooldown: 6
+    capital_allocation_pct: "0.08"
+
+  - name: funding_rate_eth
+    strategy_type: funding_rate
+    enabled: true
+    symbols: ["ETHUSDT"]
+    timeframe: "1h"
+    params:
+      entry_threshold: "0.0003"
+      extreme_threshold: "0.0008"
+      rsi_confirm_min: "30"
+      rsi_confirm_max: "70"
+      atr_stop_multiplier: "2"
+      atr_target_multiplier: "2.5"
+      max_hold_bars: 24
+      cooldown: 6
+    capital_allocation_pct: "0.06"
 
   - name: imbalance_btc
     strategy_type: imbalance
-    enabled: false
+    enabled: true
     symbols: ["BTCUSDT"]
     timeframe: "1m"
     params:
-      min_imbalance: "0.2"
+      min_imbalance: "0.15"
       persistence_bars: 3
       volume_confirm: "1.2"
       atr_stop_multiplier: "1.5"
       atr_target_multiplier: "2"
-      cooldown: 3
-    capital_allocation_pct: "0.1"
+      cooldown: 2
+    capital_allocation_pct: "0.06"
+
+  - name: imbalance_eth
+    strategy_type: imbalance
+    enabled: true
+    symbols: ["ETHUSDT"]
+    timeframe: "1m"
+    params:
+      min_imbalance: "0.15"
+      persistence_bars: 3
+      volume_confirm: "1.2"
+      atr_stop_multiplier: "1.5"
+      atr_target_multiplier: "2"
+      cooldown: 2
+    capital_allocation_pct: "0.04"
 
   - name: regime_transition_btc
     strategy_type: regime_transition
-    enabled: false
+    enabled: true
     symbols: ["BTCUSDT"]
     timeframe: "4h"
     params:
-      stability_threshold: "0.5"
-      stability_lookback: 10
-      min_emerging_trend: "0.8"
+      stability_threshold: "0.4"
+      stability_lookback: 12
+      min_emerging_trend: "0.7"
       atr_stop_multiplier: "2.5"
       atr_target_multiplier: "3.5"
-      cooldown: 8
-    capital_allocation_pct: "0.15"
+      cooldown: 6
+    capital_allocation_pct: "0.06"
+
+  - name: regime_transition_eth
+    strategy_type: regime_transition
+    enabled: true
+    symbols: ["ETHUSDT"]
+    timeframe: "4h"
+    params:
+      stability_threshold: "0.4"
+      stability_lookback: 12
+      min_emerging_trend: "0.7"
+      atr_stop_multiplier: "2.5"
+      atr_target_multiplier: "3.5"
+      cooldown: 6
+    capital_allocation_pct: "0.04"
 
   - name: cross_tf_btc
     strategy_type: cross_timeframe
-    enabled: false
+    enabled: true
     symbols: ["BTCUSDT"]
     timeframe: "15m"
     params:
-      min_disagreement: "15"
+      min_disagreement: "12"
       atr_stop_multiplier: "2"
       atr_target_multiplier: "3"
-      cooldown: 5
-    capital_allocation_pct: "0.1"
+      cooldown: 4
+    capital_allocation_pct: "0.06"
 
-  - name: anti_consensus
+  - name: cross_tf_eth
+    strategy_type: cross_timeframe
+    enabled: true
+    symbols: ["ETHUSDT"]
+    timeframe: "15m"
+    params:
+      min_disagreement: "12"
+      atr_stop_multiplier: "2"
+      atr_target_multiplier: "3"
+      cooldown: 4
+    capital_allocation_pct: "0.04"
+
+  - name: anti_consensus_btc
     strategy_type: anti_consensus
-    enabled: false
+    enabled: true
     symbols: ["BTCUSDT"]
     timeframe: "1h"
     params:
       min_consensus_count: 3
-      dampening_factor: "0.3"
+      dampening_factor: "0.25"
       generate_contrarian: true
       atr_stop_multiplier: "1.5"
       atr_target_multiplier: "2"
-      cooldown: 10
-    capital_allocation_pct: "0.1"
+      cooldown: 8
+    capital_allocation_pct: "0.04"
+
+  - name: anti_consensus_eth
+    strategy_type: anti_consensus
+    enabled: true
+    symbols: ["ETHUSDT"]
+    timeframe: "1h"
+    params:
+      min_consensus_count: 3
+      dampening_factor: "0.25"
+      generate_contrarian: true
+      atr_stop_multiplier: "1.5"
+      atr_target_multiplier: "2"
+      cooldown: 8
+    capital_allocation_pct: "0.04"
 
   - name: risk_signal_btc
     strategy_type: risk_signal
-    enabled: false
+    enabled: true
     symbols: ["BTCUSDT"]
     timeframe: "1h"
     params:
-      vol_spike_threshold: "2"
+      vol_spike_threshold: "1.8"
       risk_event_threshold: 2
       risk_event_lookback: 5
       atr_stop_multiplier: "1.5"
       atr_target_multiplier: "2.5"
-      cooldown: 5
-    capital_allocation_pct: "0.1"
+      cooldown: 4
+    capital_allocation_pct: "0.04"
+
+  - name: risk_signal_eth
+    strategy_type: risk_signal
+    enabled: true
+    symbols: ["ETHUSDT"]
+    timeframe: "1h"
+    params:
+      vol_spike_threshold: "1.8"
+      risk_event_threshold: 2
+      risk_event_lookback: 5
+      atr_stop_multiplier: "1.5"
+      atr_target_multiplier: "2.5"
+      cooldown: 4
+    capital_allocation_pct: "0.04"
 
 risk:
-  max_position_size_usd: "100000"
-  max_leverage: "3"
-  max_daily_loss_pct: "2"
-  max_drawdown_pct: "10"
-  max_open_positions: 5
-  max_notional_exposure_usd: "500000"
-  max_single_order_usd: "50000"
-  max_trades_per_day: 100
-  max_correlated_exposure_pct: "40"
-  stale_data_max_age_secs: 30
-  max_spread_bps: "50"
-  min_confidence_threshold: "0.6"
-  extreme_volatility_multiplier: "3"
-  max_order_rejections_per_hour: 5
-  max_orders_per_minute: 30
+  max_position_size_usd: "500000"
+  max_leverage: "10"
+  max_daily_loss_pct: "5"
+  max_drawdown_pct: "20"
+  max_open_positions: 30
+  max_notional_exposure_usd: "5000000"
+  max_single_order_usd: "250000"
+  max_trades_per_day: 500
+  max_correlated_exposure_pct: "60"
+  stale_data_max_age_secs: 15
+  max_spread_bps: "30"
+  min_confidence_threshold: "0.5"
+  extreme_volatility_multiplier: "4"
+  max_order_rejections_per_hour: 20
+  max_orders_per_minute: 60
 
 portfolio:
   initial_capital: "100000"
-  risk_per_trade_pct: "0.5"
-  target_volatility_pct: "15"
-  kelly_fraction: "0.25"
-  max_portfolio_leverage: "2"
-  concentration_limit_pct: "25"
-  correlation_lookback_bars: 100
-  rebalance_threshold_pct: "5"
+  risk_per_trade_pct: "1.5"
+  target_volatility_pct: "25"
+  kelly_fraction: "0.5"
+  max_portfolio_leverage: "5"
+  concentration_limit_pct: "40"
+  correlation_lookback_bars: 200
+  rebalance_threshold_pct: "3"
 
 execution:
   default_order_type: limit
   slippage_bps: "5"
-  max_retries: 3
-  retry_delay_ms: 500
+  max_retries: 5
+  retry_delay_ms: 300
   cancel_timeout_secs: 10
-  reconciliation_interval_secs: 60
-  smart_order_splitting: false
-  max_split_orders: 5
+  reconciliation_interval_secs: 30
+  smart_order_splitting: true
+  max_split_orders: 10
   min_order_size_usd: "10"
 
 backtest:
@@ -200,34 +335,34 @@ backtest:
   fee_rate_bps: "10"
   slippage_bps: "5"
   initial_capital: "100000"
-  enable_partial_fills: false
+  enable_partial_fills: true
   latency_ms: 50
-  use_funding_fees: false
+  use_funding_fees: true
 
 storage:
   database_path: "./data/opentrade.db"
   data_dir: "./data"
   journal_enabled: true
-  max_candle_cache_size: 100000
+  max_candle_cache_size: 500000
 
 telemetry:
-  log_level: info
-  json_logs: false
+  log_level: debug
+  json_logs: true
   metrics_enabled: true
   metrics_port: 9090
   tracing_enabled: true
 
+# ALL FEATURES ENABLED
 features:
-  enable_ml_models: false
-  enable_market_making: false
-  enable_statistical_arbitrage: false
-  enable_smart_order_routing: false
+  enable_ml_models: true
+  enable_market_making: true
+  enable_statistical_arbitrage: true
+  enable_smart_order_routing: true
   enable_monte_carlo_stress: true
-  enable_neural_brain: false
-  enable_collective_thinking: false
+  enable_neural_brain: true
+  enable_collective_thinking: true
 
-# Neural AI Brain Configuration
-# Requires Ollama running locally (or on network)
+# Neural AI Brain Configuration — FULL POWER
 # Model: Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF
 # Setup: ollama create qwen-trading -f Modelfile
 neural_brain:
@@ -245,12 +380,12 @@ neural_brain:
     #   models: ["qwen-trading:latest"]
     #   enabled: true
   default_model: "qwen-trading:latest"
-  classify_model: null
+  classify_model: "qwen-trading:latest"
   reasoning_model: "qwen-trading:latest"
   temperature: 0.3
-  timeout_secs: 30
+  timeout_secs: 60
   collective_thinking: true
-  consensus_threshold: 0.6
+  consensus_threshold: 0.5
   memory_db_path: "./data/neural_memory.db"
-  personality: balanced    # balanced, conservative, aggressive, scalper
-  analysis_interval: 5     # deep analysis every N candles
+  personality: aggressive    # max intelligence, fast adaptation, high risk appetite
+  analysis_interval: 2       # deep analysis every 2 candles (maximum frequency)
