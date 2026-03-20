@@ -246,7 +246,7 @@ neural_brain:
     #   enabled: true
   default_model: "qwen-trading:latest"
   classify_model: null
-  reasoning_model: null
+  reasoning_model: "qwen-trading:latest"
   temperature: 0.3
   timeout_secs: 30
   collective_thinking: true
