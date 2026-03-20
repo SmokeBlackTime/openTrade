@@ -63,6 +63,8 @@ impl BinanceClient {
     }
 
     /// Fetch historical klines/candles.
+    /// Always uses production API since klines are public data and
+    /// the testnet has very limited historical data.
     pub async fn get_klines(
         &self,
         symbol: &str,
@@ -81,7 +83,9 @@ impl BinanceClient {
         let lim = limit.unwrap_or(1000).min(1000);
         params.push_str(&format!("&limit={}", lim));
 
-        let url = format!("{}/api/v3/klines?{}", self.base_url, params);
+        // Always use production API for klines - it's a public endpoint
+        // (no auth required) and the testnet has no historical data.
+        let url = format!("https://api.binance.com/api/v3/klines?{}", params);
         debug!(url = %url, "Fetching klines");
 
         let resp = self

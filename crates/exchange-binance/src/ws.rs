@@ -11,7 +11,7 @@ use tracing::{error, info, warn};
 use crate::types::{WsKlineEvent, WsUserDataEvent, WsExecutionReport};
 
 const BINANCE_WS_SPOT: &str = "wss://stream.binance.com:9443/ws";
-const BINANCE_WS_TESTNET: &str = "wss://testnet.binance.vision/ws";
+const BINANCE_WS_TESTNET: &str = "wss://stream.testnet.binance.vision/ws";
 
 /// Subscribe to kline/candle stream for a symbol.
 pub async fn subscribe_klines(
