@@ -1,0 +1,20 @@
+[package]
+name = "ot-models"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ot-types = { workspace = true }
+ot-common = { workspace = true }
+ot-config = { workspace = true }
+ot-features = { workspace = true }
+chrono = { workspace = true }
+rand = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+statrs = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }

@@ -1,0 +1,124 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/common",
+    "crates/types",
+    "crates/config",
+    "crates/market-data",
+    "crates/features",
+    "crates/models",
+    "crates/strategy",
+    "crates/risk",
+    "crates/portfolio",
+    "crates/execution",
+    "crates/exchange-binance",
+    "crates/backtest",
+    "crates/paper",
+    "crates/live",
+    "crates/storage",
+    "crates/telemetry",
+    "crates/neural",
+    "crates/brain",
+    "crates/cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+repository = "https://github.com/SmokeBlackTime/openTrade"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+async-trait = "0.1"
+url = "2"
+futures = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+toml = "0.8"
+
+# HTTP
+reqwest = { version = "0.11", features = ["json", "native-tls"] }
+
+# Crypto
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# Decimal arithmetic (no float footguns for accounting)
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+rust_decimal_macros = "1"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# Metrics
+prometheus = "0.13"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Config validation
+validator = { version = "0.16", features = ["derive"] }
+
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Random
+rand = "0.8"
+
+# Statistics
+statrs = "0.16"
+
+# Testing
+proptest = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+mockall = "0.12"
+tempfile = "3"
+
+# Workspace crates
+ot-common = { path = "crates/common" }
+ot-types = { path = "crates/types" }
+ot-config = { path = "crates/config" }
+ot-market-data = { path = "crates/market-data" }
+ot-features = { path = "crates/features" }
+ot-models = { path = "crates/models" }
+ot-strategy = { path = "crates/strategy" }
+ot-risk = { path = "crates/risk" }
+ot-portfolio = { path = "crates/portfolio" }
+ot-execution = { path = "crates/execution" }
+ot-exchange-binance = { path = "crates/exchange-binance" }
+ot-backtest = { path = "crates/backtest" }
+ot-paper = { path = "crates/paper" }
+ot-live = { path = "crates/live" }
+ot-storage = { path = "crates/storage" }
+ot-telemetry = { path = "crates/telemetry" }
+ot-neural = { path = "crates/neural" }
+ot-brain = { path = "crates/brain" }
+ot-cli = { path = "crates/cli" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"
+
+[profile.bench]
+debug = true

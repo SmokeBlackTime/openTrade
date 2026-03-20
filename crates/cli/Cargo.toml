@@ -1,0 +1,38 @@
+[package]
+name = "ot-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "opentrade"
+path = "src/main.rs"
+
+[dependencies]
+ot-types = { workspace = true }
+ot-common = { workspace = true }
+ot-config = { workspace = true }
+ot-market-data = { workspace = true }
+ot-features = { workspace = true }
+ot-models = { workspace = true }
+ot-strategy = { workspace = true }
+ot-risk = { workspace = true }
+ot-portfolio = { workspace = true }
+ot-execution = { workspace = true }
+ot-exchange-binance = { workspace = true }
+ot-backtest = { workspace = true }
+ot-paper = { workspace = true }
+ot-live = { workspace = true }
+ot-storage = { workspace = true }
+ot-telemetry = { workspace = true }
+ot-neural = { workspace = true }
+ot-brain = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
