@@ -501,7 +501,7 @@ async fn cmd_backtest(
 }
 
 fn build_strategies(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::Strategy>> {
-    config
+    let mut strategies: Vec<Box<dyn ot_strategy::Strategy>> = config
         .strategies
         .iter()
         .filter(|s| s.enabled)
@@ -513,10 +513,94 @@ fn build_strategies(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::S
                 }
                 "breakout" => Box::new(ot_strategy::breakout::Breakout::new(&s.params)),
                 "momentum" => Box::new(ot_strategy::momentum::Momentum::new(&s.params)),
+                // Advanced strategies
+                "funding_rate" => {
+                    Box::new(ot_strategy::funding_rate::FundingRateReversion::new(&s.params))
+                }
+                "imbalance" => {
+                    Box::new(ot_strategy::imbalance::ImbalanceStrategy::new(&s.params))
+                }
+                "regime_transition" => {
+                    Box::new(ot_strategy::regime_transition::RegimeTransition::new(&s.params))
+                }
+                "cross_timeframe" => {
+                    Box::new(ot_strategy::cross_timeframe::CrossTimeframe::new(&s.params))
+                }
+                "anti_consensus" => {
+                    Box::new(ot_strategy::anti_consensus::AntiConsensus::new(&s.params))
+                }
+                "risk_signal" => {
+                    Box::new(ot_strategy::risk_signal::RiskSignalStrategy::new(&s.params))
+                }
                 _ => Box::new(ot_strategy::trend::TrendFollowing::new(&s.params)),
             }
         })
-        .collect()
+        .collect();
+
+    // Add the AI neural brain strategy if enabled
+    if config.features.enable_neural_brain {
+        match build_brain_strategy(config) {
+            Ok(brain) => {
+                info!("Neural brain strategy enabled");
+                strategies.push(brain);
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to initialize neural brain, continuing without it");
+            }
+        }
+    }
+
+    strategies
+}
+
+fn build_brain_strategy(
+    config: &ot_config::AppConfig,
+) -> Result<Box<dyn ot_strategy::Strategy>, anyhow::Error> {
+    let neural_config = config.neural_brain.clone().unwrap_or_default();
+
+    let ollama_servers: Vec<ot_neural::OllamaServerConfig> = neural_config
+        .ollama_servers
+        .iter()
+        .map(|s| ot_neural::OllamaServerConfig {
+            name: s.name.clone(),
+            base_url: s.base_url.clone(),
+            weight: s.weight,
+            models: s.models.clone(),
+            enabled: s.enabled,
+        })
+        .collect();
+
+    let personality = match neural_config.personality.as_str() {
+        "conservative" => ot_brain::personality::TradingPersonality::conservative(),
+        "aggressive" => ot_brain::personality::TradingPersonality::aggressive(),
+        "scalper" => ot_brain::personality::TradingPersonality::scalper(),
+        _ => ot_brain::personality::TradingPersonality::default(),
+    };
+
+    let brain_config = ot_brain::BrainConfig {
+        neural: ot_neural::NeuralConfig {
+            enabled: true,
+            ollama_servers,
+            default_model: neural_config.default_model,
+            classify_model: neural_config.classify_model,
+            reasoning_model: neural_config.reasoning_model,
+            temperature: neural_config.temperature,
+            max_tokens: 4096,
+            timeout_secs: neural_config.timeout_secs,
+            collective_thinking: neural_config.collective_thinking,
+            consensus_threshold: neural_config.consensus_threshold,
+            memory_db_path: neural_config.memory_db_path,
+            max_memory_entries: 100_000,
+        },
+        personality,
+        analysis_interval: neural_config.analysis_interval,
+        min_collective_confidence: neural_config.consensus_threshold,
+        learn_from_trades: true,
+        memory_context_size: 10,
+    };
+
+    let brain = ot_brain::trader::BrainStrategy::new(brain_config)?;
+    Ok(Box::new(brain))
 }
 
 async fn cmd_paper(config: &ot_config::AppConfig, run_id: Option<String>) -> Result<()> {

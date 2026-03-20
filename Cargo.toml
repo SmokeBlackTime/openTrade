@@ -17,6 +17,8 @@ members = [
     "crates/live",
     "crates/storage",
     "crates/telemetry",
+    "crates/neural",
+    "crates/brain",
     "crates/cli",
 ]
 
@@ -109,6 +111,8 @@ ot-paper = { path = "crates/paper" }
 ot-live = { path = "crates/live" }
 ot-storage = { path = "crates/storage" }
 ot-telemetry = { path = "crates/telemetry" }
+ot-neural = { path = "crates/neural" }
+ot-brain = { path = "crates/brain" }
 ot-cli = { path = "crates/cli" }
 
 [profile.release]

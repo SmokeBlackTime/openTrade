@@ -12,6 +12,13 @@ pub mod mean_reversion;
 pub mod meta;
 pub mod momentum;
 pub mod trend;
+// Advanced strategies
+pub mod anti_consensus;
+pub mod cross_timeframe;
+pub mod funding_rate;
+pub mod imbalance;
+pub mod regime_transition;
+pub mod risk_signal;
 
 use ot_features::FeatureRow;
 use ot_types::market::Candle;

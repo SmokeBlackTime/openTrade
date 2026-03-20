@@ -71,6 +71,91 @@ strategies:
       allow_short: false
     capital_allocation_pct: "0.3"
 
+  # --- Advanced AI-driven strategies ---
+  - name: funding_rate_btc
+    strategy_type: funding_rate
+    enabled: false
+    symbols: ["BTCUSDT"]
+    timeframe: "1h"
+    params:
+      entry_threshold: "0.0005"
+      extreme_threshold: "0.001"
+      rsi_confirm_min: "30"
+      rsi_confirm_max: "70"
+      atr_stop_multiplier: "2"
+      atr_target_multiplier: "2.5"
+      max_hold_bars: 24
+      cooldown: 8
+    capital_allocation_pct: "0.15"
+
+  - name: imbalance_btc
+    strategy_type: imbalance
+    enabled: false
+    symbols: ["BTCUSDT"]
+    timeframe: "1m"
+    params:
+      min_imbalance: "0.2"
+      persistence_bars: 3
+      volume_confirm: "1.2"
+      atr_stop_multiplier: "1.5"
+      atr_target_multiplier: "2"
+      cooldown: 3
+    capital_allocation_pct: "0.1"
+
+  - name: regime_transition_btc
+    strategy_type: regime_transition
+    enabled: false
+    symbols: ["BTCUSDT"]
+    timeframe: "4h"
+    params:
+      stability_threshold: "0.5"
+      stability_lookback: 10
+      min_emerging_trend: "0.8"
+      atr_stop_multiplier: "2.5"
+      atr_target_multiplier: "3.5"
+      cooldown: 8
+    capital_allocation_pct: "0.15"
+
+  - name: cross_tf_btc
+    strategy_type: cross_timeframe
+    enabled: false
+    symbols: ["BTCUSDT"]
+    timeframe: "15m"
+    params:
+      min_disagreement: "15"
+      atr_stop_multiplier: "2"
+      atr_target_multiplier: "3"
+      cooldown: 5
+    capital_allocation_pct: "0.1"
+
+  - name: anti_consensus
+    strategy_type: anti_consensus
+    enabled: false
+    symbols: ["BTCUSDT"]
+    timeframe: "1h"
+    params:
+      min_consensus_count: 3
+      dampening_factor: "0.3"
+      generate_contrarian: true
+      atr_stop_multiplier: "1.5"
+      atr_target_multiplier: "2"
+      cooldown: 10
+    capital_allocation_pct: "0.1"
+
+  - name: risk_signal_btc
+    strategy_type: risk_signal
+    enabled: false
+    symbols: ["BTCUSDT"]
+    timeframe: "1h"
+    params:
+      vol_spike_threshold: "2"
+      risk_event_threshold: 2
+      risk_event_lookback: 5
+      atr_stop_multiplier: "1.5"
+      atr_target_multiplier: "2.5"
+      cooldown: 5
+    capital_allocation_pct: "0.1"
+
 risk:
   max_position_size_usd: "100000"
   max_leverage: "3"
@@ -138,3 +223,34 @@ features:
   enable_statistical_arbitrage: false
   enable_smart_order_routing: false
   enable_monte_carlo_stress: true
+  enable_neural_brain: false
+  enable_collective_thinking: false
+
+# Neural AI Brain Configuration
+# Requires Ollama running locally (or on network)
+# Model: Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF
+# Setup: ollama create qwen-trading -f Modelfile
+neural_brain:
+  enabled: false
+  ollama_servers:
+    - name: local-ollama
+      base_url: "http://localhost:11434"
+      weight: 1
+      models: ["qwen-trading:latest"]
+      enabled: true
+    # Add more servers for collective thinking:
+    # - name: gpu-server
+    #   base_url: "http://192.168.1.100:11434"
+    #   weight: 2
+    #   models: ["qwen-trading:latest"]
+    #   enabled: true
+  default_model: "qwen-trading:latest"
+  classify_model: null
+  reasoning_model: null
+  temperature: 0.3
+  timeout_secs: 30
+  collective_thinking: false
+  consensus_threshold: 0.6
+  memory_db_path: "./data/neural_memory.db"
+  personality: balanced    # balanced, conservative, aggressive, scalper
+  analysis_interval: 5     # deep analysis every N candles

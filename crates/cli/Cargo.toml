@@ -24,6 +24,8 @@ ot-paper = { workspace = true }
 ot-live = { workspace = true }
 ot-storage = { workspace = true }
 ot-telemetry = { workspace = true }
+ot-neural = { workspace = true }
+ot-brain = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }

@@ -40,6 +40,9 @@ pub struct AppConfig {
     pub storage: StorageConfig,
     pub telemetry: TelemetryConfig,
     pub features: FeatureFlagsConfig,
+    /// Neural AI brain configuration (optional).
+    #[serde(default)]
+    pub neural_brain: Option<NeuralBrainConfig>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +180,123 @@ pub struct FeatureFlagsConfig {
     pub enable_statistical_arbitrage: bool,
     pub enable_smart_order_routing: bool,
     pub enable_monte_carlo_stress: bool,
+    /// Enable the AI neural trading brain (requires Ollama).
+    #[serde(default)]
+    pub enable_neural_brain: bool,
+    /// Enable collective thinking (multi-model consensus).
+    #[serde(default)]
+    pub enable_collective_thinking: bool,
+}
+
+/// Configuration for the neural/AI subsystem.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NeuralBrainConfig {
+    /// Whether the neural brain is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Ollama server URLs.
+    #[serde(default = "default_ollama_servers")]
+    pub ollama_servers: Vec<OllamaServerEntry>,
+    /// Default model name.
+    #[serde(default = "default_model_name")]
+    pub default_model: String,
+    /// Model for fast classification.
+    #[serde(default)]
+    pub classify_model: Option<String>,
+    /// Model for deep reasoning.
+    #[serde(default)]
+    pub reasoning_model: Option<String>,
+    /// Temperature for inference.
+    #[serde(default = "default_temperature")]
+    pub temperature: f64,
+    /// Timeout per request.
+    #[serde(default = "default_timeout")]
+    pub timeout_secs: u64,
+    /// Enable collective thinking.
+    #[serde(default)]
+    pub collective_thinking: bool,
+    /// Consensus threshold.
+    #[serde(default = "default_consensus")]
+    pub consensus_threshold: f64,
+    /// Memory database path.
+    #[serde(default = "default_memory_path")]
+    pub memory_db_path: String,
+    /// AI personality profile.
+    #[serde(default = "default_personality")]
+    pub personality: String,
+    /// Analysis interval (every N candles).
+    #[serde(default = "default_analysis_interval")]
+    pub analysis_interval: u32,
+}
+
+fn default_ollama_servers() -> Vec<OllamaServerEntry> {
+    vec![OllamaServerEntry {
+        name: "local-ollama".into(),
+        base_url: "http://localhost:11434".into(),
+        weight: 1,
+        models: vec![],
+        enabled: true,
+    }]
+}
+
+fn default_model_name() -> String {
+    "qwen-trading:latest".into()
+}
+fn default_temperature() -> f64 {
+    0.3
+}
+fn default_timeout() -> u64 {
+    30
+}
+fn default_consensus() -> f64 {
+    0.6
+}
+fn default_memory_path() -> String {
+    "./data/neural_memory.db".into()
+}
+fn default_personality() -> String {
+    "balanced".into()
+}
+fn default_analysis_interval() -> u32 {
+    5
+}
+
+impl Default for NeuralBrainConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            ollama_servers: default_ollama_servers(),
+            default_model: default_model_name(),
+            classify_model: None,
+            reasoning_model: None,
+            temperature: default_temperature(),
+            timeout_secs: default_timeout(),
+            collective_thinking: false,
+            consensus_threshold: default_consensus(),
+            memory_db_path: default_memory_path(),
+            personality: default_personality(),
+            analysis_interval: default_analysis_interval(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaServerEntry {
+    pub name: String,
+    pub base_url: String,
+    #[serde(default = "default_weight")]
+    pub weight: u32,
+    #[serde(default)]
+    pub models: Vec<String>,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_weight() -> u32 {
+    1
+}
+fn default_enabled() -> bool {
+    true
 }
 
 // ── Hardcoded absolute safety maxima ──
@@ -357,6 +477,8 @@ features:
   enable_statistical_arbitrage: false
   enable_smart_order_routing: false
   enable_monte_carlo_stress: true
+  enable_neural_brain: false
+  enable_collective_thinking: false
 "#
     }
 

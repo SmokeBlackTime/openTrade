@@ -1331,6 +1331,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "ot-brain"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "ot-common",
+ "ot-features",
+ "ot-models",
+ "ot-neural",
+ "ot-strategy",
+ "ot-types",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "ot-cli"
 version = "0.1.0"
 dependencies = [
@@ -1338,6 +1362,7 @@ dependencies = [
  "chrono",
  "clap",
  "ot-backtest",
+ "ot-brain",
  "ot-common",
  "ot-config",
  "ot-exchange-binance",
@@ -1346,6 +1371,7 @@ dependencies = [
  "ot-live",
  "ot-market-data",
  "ot-models",
+ "ot-neural",
  "ot-paper",
  "ot-portfolio",
  "ot-risk",
@@ -1521,6 +1547,29 @@ dependencies = [
  "serde_json",
  "statrs",
  "thiserror 1.0.69",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "ot-neural"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "ot-common",
+ "ot-features",
+ "ot-types",
+ "reqwest",
+ "rusqlite",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
  "tracing",
  "uuid",
 ]
