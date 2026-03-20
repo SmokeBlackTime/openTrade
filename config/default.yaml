@@ -231,7 +231,7 @@ features:
 # Model: Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF
 # Setup: ollama create qwen-trading -f Modelfile
 neural_brain:
-  enabled: false
+  enabled: true
   ollama_servers:
     - name: local-ollama
       base_url: "http://localhost:11434"
@@ -246,10 +246,10 @@ neural_brain:
     #   enabled: true
   default_model: "qwen-trading:latest"
   classify_model: null
-  reasoning_model: "qwen-trading:latest"
+  reasoning_model: null
   temperature: 0.3
   timeout_secs: 30
-  collective_thinking: false
+  collective_thinking: true
   consensus_threshold: 0.6
   memory_db_path: "./data/neural_memory.db"
   personality: balanced    # balanced, conservative, aggressive, scalper
