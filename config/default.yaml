@@ -374,12 +374,12 @@ neural_brain:
       weight: 1
       models: ["qwen-trading:latest"]
       enabled: true
-    # Add more servers for collective thinking:
-    # - name: gpu-server
-    #   base_url: "http://192.168.1.100:11434"
-    #   weight: 2
-    #   models: ["qwen-trading:latest"]
-    #   enabled: true
+    # Add your second machine here (change IP to match):
+    - name: gpu-server-2
+      base_url: "http://192.168.1.XXX:11434"
+      weight: 1
+      models: ["qwen-trading:latest"]
+      enabled: true
   default_model: "qwen-trading:latest"
   classify_model: "qwen-trading:latest"
   reasoning_model: "qwen-trading:latest"
