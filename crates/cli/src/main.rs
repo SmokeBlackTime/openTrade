@@ -884,6 +884,40 @@ async fn cmd_live(
     ));
 
     let strategies = build_strategies(config);
+
+    // Initialize neural brain (warmup models on all Ollama servers)
+    if config.features.enable_neural_brain {
+        if let Some(neural_config) = &config.neural_brain {
+            let ollama_servers: Vec<ot_neural::OllamaServerConfig> = neural_config
+                .ollama_servers
+                .iter()
+                .map(|s| ot_neural::OllamaServerConfig {
+                    name: s.name.clone(),
+                    base_url: s.base_url.clone(),
+                    weight: s.weight,
+                    models: s.models.clone(),
+                    enabled: s.enabled,
+                })
+                .collect();
+            let pool = ot_neural::pool::OllamaPool::new(&ollama_servers, neural_config.timeout_secs);
+            info!("Warming up Ollama models on all servers...");
+            pool.health_check_all().await;
+            for server in &neural_config.ollama_servers {
+                if !server.enabled {
+                    continue;
+                }
+                for model in &server.models {
+                    info!(model = %model, server = %server.name, "Warming up model...");
+                    let messages = vec![ot_neural::ollama::ChatMessage::user("ping".to_string())];
+                    match pool.chat(model, messages, None, false).await {
+                        Ok((_, srv)) => info!(model = %model, server = %srv, "Model warmed up OK"),
+                        Err(e) => warn!(model = %model, server = %server.name, error = %e, "Model warmup FAILED"),
+                    }
+                }
+            }
+        }
+    }
+
     let mut engine = ot_live::TradingEngine::new(config.clone(), strategies, exchange);
 
     // Restore state from previous session

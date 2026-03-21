@@ -291,17 +291,47 @@ impl TradingEngine {
             return Ok(());
         }
 
-        // Bump qty up to meet minimum notional if needed (Binance futures requires >= 20 USDT)
+        // Ensure qty meets both minimum notional AND minimum step size after truncation.
+        // Binance futures requires notional >= 20 USDT, and qty must survive precision truncation.
         let min_notional = self.config.execution.min_order_size_usd;
-        let (size, notional) = if notional < min_notional && candle.close > dec!(0) {
-            let min_qty = (min_notional / candle.close) * dec!(1.01); // 1% buffer
+        let min_step = match signal.symbol.as_str() {
+            "BTCUSDT" => dec!(0.001),   // 3 decimals
+            "ETHUSDT" => dec!(0.001),   // 3 decimals
+            "BNBUSDT" => dec!(0.01),    // 2 decimals
+            "SOLUSDT" => dec!(0.1),     // 1 decimal
+            "XRPUSDT" => dec!(0.1),     // 1 decimal
+            "DOGEUSDT" => dec!(1),      // 0 decimals
+            "ADAUSDT" => dec!(1),       // 0 decimals
+            _ => dec!(0.001),
+        };
+        let min_qty_for_notional = if candle.close > dec!(0) {
+            (min_notional / candle.close) * dec!(1.01)
+        } else {
+            min_step
+        };
+        // Use whichever is larger: the step size or the notional-based minimum
+        let effective_min_qty = min_step.max(min_qty_for_notional);
+        let (size, _notional) = if size < effective_min_qty {
+            let bumped_notional = effective_min_qty * candle.close;
+            // Safety check: don't exceed equity * max_leverage
+            let max_allowed = self.portfolio.equity() * self.config.portfolio.max_portfolio_leverage;
+            if bumped_notional > max_allowed {
+                warn!(
+                    needed_notional = %bumped_notional,
+                    max_allowed = %max_allowed,
+                    symbol = %signal.symbol,
+                    "Cannot meet minimum order size within leverage limits, skipping"
+                );
+                return Ok(());
+            }
             info!(
                 original_qty = %size,
-                bumped_qty = %min_qty,
+                bumped_qty = %effective_min_qty,
+                bumped_notional = %bumped_notional,
                 symbol = %signal.symbol,
-                "Bumping qty to meet minimum notional"
+                "Bumping qty to meet exchange minimums"
             );
-            (min_qty, min_qty * candle.close)
+            (effective_min_qty, bumped_notional)
         } else {
             (size, notional)
         };
