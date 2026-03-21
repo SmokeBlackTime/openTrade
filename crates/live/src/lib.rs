@@ -292,7 +292,7 @@ impl TradingEngine {
         }
 
         // Ensure qty meets both minimum notional AND minimum step size after truncation.
-        // Binance futures requires notional >= 20 USDT, and qty must survive precision truncation.
+        // Binance futures requires notional >= 100 USDT, and qty must survive precision truncation.
         let min_notional = self.config.execution.min_order_size_usd;
         let min_step = match signal.symbol.as_str() {
             "BTCUSDT" => dec!(0.001),   // 3 decimals
@@ -304,13 +304,15 @@ impl TradingEngine {
             "ADAUSDT" => dec!(1),       // 0 decimals
             _ => dec!(0.001),
         };
-        let min_qty_for_notional = if candle.close > dec!(0) {
-            (min_notional / candle.close) * dec!(1.01)
+        // Calculate min qty for notional, then round UP to the nearest step size
+        let effective_min_qty = if candle.close > dec!(0) {
+            let raw_qty = min_notional / candle.close;
+            // Ceil to step: e.g. 0.001418 with step 0.001 → 0.002
+            let steps = (raw_qty / min_step).ceil();
+            steps * min_step
         } else {
             min_step
         };
-        // Use whichever is larger: the step size or the notional-based minimum
-        let effective_min_qty = min_step.max(min_qty_for_notional);
         let (size, _notional) = if size < effective_min_qty {
             let bumped_notional = effective_min_qty * candle.close;
             // Safety check: don't exceed equity * max_leverage

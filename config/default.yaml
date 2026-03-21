@@ -314,7 +314,7 @@ portfolio:
   risk_per_trade_pct: "50"
   target_volatility_pct: "25"
   kelly_fraction: "1.0"
-  max_portfolio_leverage: "5"
+  max_portfolio_leverage: "8"
   concentration_limit_pct: "90"
   correlation_lookback_bars: 200
   rebalance_threshold_pct: "3"
@@ -328,7 +328,7 @@ execution:
   reconciliation_interval_secs: 30
   smart_order_splitting: true
   max_split_orders: 10
-  min_order_size_usd: "20"
+  min_order_size_usd: "100"
 
 backtest:
   start_date: "2024-01-01"
