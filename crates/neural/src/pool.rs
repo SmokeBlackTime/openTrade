@@ -197,6 +197,34 @@ impl OllamaPool {
         Ok((resp, entry.config.name.clone()))
     }
 
+    /// Send a chat request to a specific server by name.
+    pub async fn chat_on_server(
+        &self,
+        server_name: &str,
+        model: &str,
+        messages: Vec<ChatMessage>,
+        options: Option<OllamaOptions>,
+        json_mode: bool,
+    ) -> Result<(ChatResponse, String), OllamaError> {
+        let entries = self.entries.read().await;
+        let entry = entries
+            .iter()
+            .find(|e| e.config.name == server_name && e.health.is_healthy)
+            .ok_or(OllamaError::NoServersAvailable)?;
+
+        debug!(
+            server = %entry.config.name,
+            model = model,
+            "Routing chat request to specific server"
+        );
+
+        let resp = entry
+            .client
+            .chat(model, messages, options, json_mode)
+            .await?;
+        Ok((resp, entry.config.name.clone()))
+    }
+
     /// Get health status of all servers.
     pub async fn health_status(&self) -> Vec<ServerHealth> {
         self.entries

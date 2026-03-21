@@ -83,34 +83,42 @@ impl CollectiveDecision {
 /// Coordinates multiple models to reach consensus on trading decisions.
 /// Each model votes independently, then votes are aggregated with weighted
 /// scoring based on model confidence and historical accuracy.
+/// A (server_name, model_name) pair representing one voter in the collective.
+#[derive(Debug, Clone)]
+pub struct ServerModel {
+    pub server: String,
+    pub model: String,
+}
+
 pub struct CollectiveThinking {
     pool: Arc<OllamaPool>,
-    /// Models to use for collective voting.
-    models: Vec<String>,
-    /// Model weights (from historical accuracy). Higher = more trusted.
-    model_weights: HashMap<String, f64>,
+    /// Server-model pairs: each pair gets one vote.
+    voters: Vec<ServerModel>,
+    /// Voter weights keyed by "server:model". Higher = more trusted.
+    voter_weights: HashMap<String, f64>,
     /// Temperature for individual model inference.
     temperature: f64,
 }
 
 impl CollectiveThinking {
-    pub fn new(pool: Arc<OllamaPool>, models: Vec<String>, temperature: f64) -> Self {
-        let model_weights = models
+    pub fn new(pool: Arc<OllamaPool>, voters: Vec<ServerModel>, temperature: f64) -> Self {
+        let voter_weights = voters
             .iter()
-            .map(|m| (m.clone(), 1.0))
+            .map(|v| (format!("{}:{}", v.server, v.model), 1.0))
             .collect();
 
         Self {
             pool,
-            models,
-            model_weights,
+            voters,
+            voter_weights,
             temperature,
         }
     }
 
-    /// Update a model's weight based on accuracy feedback.
-    pub fn update_weight(&mut self, model: &str, accuracy: f64) {
-        if let Some(weight) = self.model_weights.get_mut(model) {
+    /// Update a voter's weight based on accuracy feedback.
+    pub fn update_weight(&mut self, server: &str, model: &str, accuracy: f64) {
+        let key = format!("{}:{}", server, model);
+        if let Some(weight) = self.voter_weights.get_mut(&key) {
             // Exponential moving average of accuracy
             *weight = *weight * 0.9 + accuracy * 0.1;
         }
@@ -134,11 +142,12 @@ impl CollectiveThinking {
             market_context, features_json
         );
 
-        // Spawn parallel inference across all models
+        // Spawn parallel inference across all server-model voters
         let mut handles = Vec::new();
-        for model in &self.models {
+        for voter in &self.voters {
             let pool = Arc::clone(&self.pool);
-            let model_name = model.clone();
+            let server_name = voter.server.clone();
+            let model_name = voter.model.clone();
             let system = system_prompt.to_string();
             let prompt = user_prompt.clone();
             let temp = self.temperature;
@@ -157,7 +166,7 @@ impl CollectiveThinking {
                 };
 
                 match pool
-                    .chat(&model_name, messages, Some(options), true)
+                    .chat_on_server(&server_name, &model_name, messages, Some(options), true)
                     .await
                 {
                     Ok((resp, server)) => {
@@ -240,7 +249,8 @@ impl CollectiveThinking {
         let mut total_weight = 0.0;
 
         for vote in &votes {
-            let model_weight = self.model_weights.get(&vote.model).copied().unwrap_or(1.0);
+            let key = format!("{}:{}", vote.server, vote.model);
+            let model_weight = self.voter_weights.get(&key).copied().unwrap_or(1.0);
             let weighted_conf = vote.confidence * model_weight;
             *direction_scores.entry(vote.direction).or_default() += weighted_conf;
             total_weight += model_weight;

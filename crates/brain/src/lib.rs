@@ -16,7 +16,7 @@ pub mod trader;
 
 use chrono::{DateTime, Utc};
 use ot_features::FeatureRow;
-use ot_neural::collective::{CollectiveDecision, CollectiveThinking, TradeDirection};
+use ot_neural::collective::{CollectiveDecision, CollectiveThinking, ServerModel, TradeDirection};
 use ot_neural::ollama::ChatMessage;
 use ot_neural::memory::{MemoryCategory, MemoryEntry, NeuralMemory};
 use ot_neural::pipeline::NeuralPipeline;
@@ -126,30 +126,39 @@ impl TradingBrain {
             config.neural.clone(),
         );
 
-        // Determine models for collective thinking
-        // Include models from ALL enabled servers so each server gets a vote
-        let models = if config.neural.collective_thinking {
-            let mut models: Vec<String> = config
+        // Build voter list: one vote per (server, model) pair so every server participates
+        let voters = if config.neural.collective_thinking {
+            let mut voters: Vec<ServerModel> = config
                 .neural
                 .ollama_servers
                 .iter()
                 .filter(|s| s.enabled)
-                .flat_map(|s| s.models.iter().cloned())
+                .flat_map(|s| {
+                    s.models.iter().map(move |m| ServerModel {
+                        server: s.name.clone(),
+                        model: m.clone(),
+                    })
+                })
                 .collect();
-            if models.is_empty() {
-                models.push(config.neural.default_model.clone());
+            if voters.is_empty() {
+                voters.push(ServerModel {
+                    server: "default".into(),
+                    model: config.neural.default_model.clone(),
+                });
             }
-            // Deduplicate
-            models.sort();
-            models.dedup();
-            models
+            voters
         } else {
-            vec![config.neural.default_model.clone()]
+            vec![ServerModel {
+                server: config.neural.ollama_servers.first()
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "default".into()),
+                model: config.neural.default_model.clone(),
+            }]
         };
 
         let collective = CollectiveThinking::new(
             Arc::clone(&pool),
-            models,
+            voters,
             config.neural.temperature,
         );
 
