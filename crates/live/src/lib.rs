@@ -291,18 +291,20 @@ impl TradingEngine {
             return Ok(());
         }
 
-        // Check minimum notional after truncation (Binance futures requires >= 20 USDT)
+        // Bump qty up to meet minimum notional if needed (Binance futures requires >= 20 USDT)
         let min_notional = self.config.execution.min_order_size_usd;
-        if notional < min_notional {
-            warn!(
-                notional = %notional,
-                min_notional = %min_notional,
+        let (size, notional) = if notional < min_notional && candle.close > dec!(0) {
+            let min_qty = (min_notional / candle.close) * dec!(1.01); // 1% buffer
+            info!(
+                original_qty = %size,
+                bumped_qty = %min_qty,
                 symbol = %signal.symbol,
-                equity = %self.portfolio.equity(),
-                "Order notional below minimum, skipping (need more equity or fewer strategies)"
+                "Bumping qty to meet minimum notional"
             );
-            return Ok(());
-        }
+            (min_qty, min_qty * candle.close)
+        } else {
+            (size, notional)
+        };
 
         let side = match signal.direction {
             SignalDirection::Long => Side::Buy,

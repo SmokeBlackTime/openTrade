@@ -17,6 +17,7 @@ pub mod trader;
 use chrono::{DateTime, Utc};
 use ot_features::FeatureRow;
 use ot_neural::collective::{CollectiveDecision, CollectiveThinking, TradeDirection};
+use ot_neural::ollama::ChatMessage;
 use ot_neural::memory::{MemoryCategory, MemoryEntry, NeuralMemory};
 use ot_neural::pipeline::NeuralPipeline;
 use ot_neural::pool::OllamaPool;
@@ -178,7 +179,7 @@ impl TradingBrain {
         })
     }
 
-    /// Initialize the brain — run health checks and warm up.
+    /// Initialize the brain — run health checks and warm up models.
     pub async fn initialize(&self) {
         info!("Warming up neural pool...");
         self.pool.health_check_all().await;
@@ -193,6 +194,31 @@ impl TradingBrain {
 
         if healthy == 0 {
             warn!("No healthy Ollama servers available! Neural features will be limited.");
+            return;
+        }
+
+        // Warm up all configured models by sending a tiny request to each.
+        // This forces Ollama to load the model into memory on each server.
+        let all_models: Vec<String> = self
+            .config
+            .neural
+            .ollama_servers
+            .iter()
+            .filter(|s| s.enabled)
+            .flat_map(|s| s.models.iter().cloned())
+            .collect();
+
+        for model in &all_models {
+            info!(model = %model, "Warming up model (preloading into memory)...");
+            let messages = vec![ChatMessage::user("ping".to_string())];
+            match self.pool.chat(model, messages, None, false).await {
+                Ok((_, server)) => {
+                    info!(model = %model, server = %server, "Model warmed up successfully");
+                }
+                Err(e) => {
+                    warn!(model = %model, error = %e, "Failed to warm up model");
+                }
+            }
         }
     }
 
