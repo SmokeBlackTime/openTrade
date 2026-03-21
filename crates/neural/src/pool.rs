@@ -53,7 +53,7 @@ impl OllamaPool {
                 let health = ServerHealth {
                     name: config.name.clone(),
                     base_url: config.base_url.clone(),
-                    is_healthy: false, // unknown until checked
+                    is_healthy: true, // assume healthy until proven otherwise
                     last_check_ms: 0,
                     latency_ms: None,
                     available_models: config.models.clone(),

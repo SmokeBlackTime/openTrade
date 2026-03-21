@@ -333,16 +333,20 @@ impl BinanceFuturesClient {
         stop_price: Option<Decimal>,
         reduce_only: bool,
     ) -> Result<BinanceOrderResponse, OtError> {
+        let quantity = crate::client::truncate_dp(quantity, crate::client::qty_precision(symbol));
+
         let mut query = format!(
             "symbol={}&side={}&type={}&quantity={}&recvWindow={}&timestamp={}",
             symbol, side, order_type, quantity, self.recv_window, Self::timestamp_ms()
         );
 
         if let Some(p) = price {
+            let p = crate::client::truncate_dp(p, crate::client::price_precision(symbol));
             query.push_str(&format!("&price={}&timeInForce=GTC", p));
         }
 
         if let Some(sp) = stop_price {
+            let sp = crate::client::truncate_dp(sp, crate::client::price_precision(symbol));
             query.push_str(&format!("&stopPrice={}", sp));
         }
 

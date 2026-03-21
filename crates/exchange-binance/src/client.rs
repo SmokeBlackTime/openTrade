@@ -10,6 +10,41 @@ use tracing::{debug, error, warn};
 use crate::auth::sign_query;
 use crate::types::*;
 
+/// Truncate a Decimal to `dp` decimal places (rounds toward zero).
+/// This avoids Binance precision rejections.
+pub fn truncate_dp(value: Decimal, dp: u32) -> Decimal {
+    value.round_dp_with_strategy(dp, rust_decimal::RoundingStrategy::ToZero)
+}
+
+/// Get the quantity precision (decimal places) for a given symbol.
+/// Falls back to 3 for unknown symbols.
+pub fn qty_precision(symbol: &str) -> u32 {
+    match symbol {
+        "BTCUSDT" => 3,
+        "ETHUSDT" => 3,
+        "BNBUSDT" => 2,
+        "SOLUSDT" => 1,
+        "XRPUSDT" => 1,
+        "DOGEUSDT" => 0,
+        "ADAUSDT" => 0,
+        _ => 3,
+    }
+}
+
+/// Get the price precision (decimal places) for a given symbol.
+pub fn price_precision(symbol: &str) -> u32 {
+    match symbol {
+        "BTCUSDT" => 1,
+        "ETHUSDT" => 2,
+        "BNBUSDT" => 2,
+        "SOLUSDT" => 2,
+        "XRPUSDT" => 4,
+        "DOGEUSDT" => 5,
+        "ADAUSDT" => 4,
+        _ => 2,
+    }
+}
+
 /// Binance REST client for spot and futures.
 pub struct BinanceClient {
     http: Client,
@@ -261,18 +296,22 @@ impl BinanceClient {
             OrderType::ReduceOnly => "MARKET",
         };
 
+        let sym_str = req.symbol.as_str();
+        let quantity = truncate_dp(req.quantity, qty_precision(sym_str));
+
         let mut query = format!(
             "symbol={}&side={}&type={}&quantity={}&newClientOrderId={}&recvWindow={}&timestamp={}",
             req.symbol,
             side_str,
             type_str,
-            req.quantity,
+            quantity,
             req.client_order_id,
             self.recv_window,
             Self::timestamp_ms()
         );
 
         if let Some(price) = req.price {
+            let price = truncate_dp(price, price_precision(sym_str));
             query.push_str(&format!("&price={}", price));
             if req.time_in_force.is_some() || req.order_type == OrderType::Limit {
                 let tif = match req.time_in_force {
@@ -285,6 +324,7 @@ impl BinanceClient {
         }
 
         if let Some(sp) = req.stop_price {
+            let sp = truncate_dp(sp, price_precision(sym_str));
             query.push_str(&format!("&stopPrice={}", sp));
         }
 
@@ -292,7 +332,7 @@ impl BinanceClient {
         query.push_str(&format!("&signature={}", signature));
 
         let url = format!("{}{}?{}", self.base_url, self.order_path(), query);
-        debug!("Placing order: {} {} {} {}", req.symbol, side_str, type_str, req.quantity);
+        debug!("Placing order: {} {} {} {}", req.symbol, side_str, type_str, quantity);
 
         let resp = self
             .http
