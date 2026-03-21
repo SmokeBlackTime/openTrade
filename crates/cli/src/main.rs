@@ -847,16 +847,30 @@ async fn cmd_live(
             }
         }
         Err(e) => {
-            warn!(error = %e, "Failed to fetch account balance");
+            warn!(error = %e, "Failed to fetch account balance (continuing anyway)");
         }
     }
 
-    // Start user data stream for order updates
-    let listen_key = client
-        .start_user_data_stream()
-        .await
-        .context("Failed to start user data stream")?;
-    info!(listen_key = %listen_key, "User data stream started");
+    // Start user data stream for order updates (retry up to 3 times)
+    let mut listen_key = None;
+    for attempt in 1..=3 {
+        match client.start_user_data_stream().await {
+            Ok(key) => {
+                info!(listen_key = %key, "User data stream started");
+                listen_key = Some(key);
+                break;
+            }
+            Err(e) => {
+                warn!(attempt = attempt, error = %e, "Failed to start user data stream");
+                if attempt < 3 {
+                    tokio::time::sleep(std::time::Duration::from_secs(2 * attempt as u64)).await;
+                }
+            }
+        }
+    }
+    if listen_key.is_none() {
+        warn!("Could not start user data stream after 3 attempts — continuing without real-time order updates");
+    }
 
     let exchange = Arc::new(ot_exchange_binance::BinanceExchangeAdapter::new(
         ot_exchange_binance::BinanceClient::with_base_url(
@@ -964,15 +978,21 @@ async fn cmd_live(
         }
     }
 
-    // Subscribe to user data stream for order updates
-    let mut user_data_rx = ot_exchange_binance::ws::subscribe_user_data_ext(
-        &listen_key,
-        config.exchange.use_testnet,
-        config.exchange.use_futures,
-        100,
-    )
-    .await
-    .context("Failed to subscribe to user data stream")?;
+    // Subscribe to user data stream for order updates (optional)
+    let mut user_data_rx = if let Some(ref lk) = listen_key {
+        Some(
+            ot_exchange_binance::ws::subscribe_user_data_ext(
+                lk,
+                config.exchange.use_testnet,
+                config.exchange.use_futures,
+                100,
+            )
+            .await
+            .context("Failed to subscribe to user data stream")?,
+        )
+    } else {
+        None
+    };
 
     // Merge candle receivers
     let (merged_tx, mut merged_rx) = tokio::sync::mpsc::channel::<ot_types::market::Candle>(500);
@@ -997,21 +1017,23 @@ async fn cmd_live(
         config.exchange.use_futures,
         config.exchange.proxy_url.clone(),
     );
-    let keepalive_key = listen_key.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
-        loop {
-            interval.tick().await;
-            if let Err(e) = keepalive_client
-                .keepalive_user_data_stream(&keepalive_key)
-                .await
-            {
-                error!(error = %e, "Failed to keepalive user data stream");
-            } else {
-                info!("User data stream keepalive sent");
+    if let Some(ref lk) = listen_key {
+        let keepalive_key = lk.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+            loop {
+                interval.tick().await;
+                if let Err(e) = keepalive_client
+                    .keepalive_user_data_stream(&keepalive_key)
+                    .await
+                {
+                    error!(error = %e, "Failed to keepalive user data stream");
+                } else {
+                    info!("User data stream keepalive sent");
+                }
             }
-        }
-    });
+        });
+    }
 
     // Reconciliation interval
     let reconcile_interval = config.execution.reconciliation_interval_secs;
@@ -1039,7 +1061,12 @@ async fn cmd_live(
                     error!(error = %e, "Error processing candle");
                 }
             }
-            Some(order_update) = user_data_rx.recv() => {
+            Some(order_update) = async {
+                match user_data_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
                 info!(
                     id = %order_update.client_order_id,
                     symbol = %order_update.symbol,
