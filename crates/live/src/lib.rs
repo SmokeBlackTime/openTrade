@@ -90,12 +90,23 @@ impl TradingEngine {
             None => return Ok(()),
         };
 
-        // Restore equity from system state
+        // Restore equity from system state — but only if it's close to config capital
+        // (prevents stale journal from overriding a config change)
+        let config_capital = self.config.portfolio.initial_capital;
         if let Some(equity_str) = storage.get_state("current_equity")? {
             if let Ok(equity) = equity_str.parse::<Decimal>() {
-                info!(equity = %equity, "Restored equity from journal");
-                self.portfolio.update_equity(equity);
-                self.risk_engine.update_equity(equity);
+                let ratio = if config_capital > dec!(0) { equity / config_capital } else { dec!(100) };
+                if ratio > dec!(0.5) && ratio < dec!(2) {
+                    info!(equity = %equity, "Restored equity from journal");
+                    self.portfolio.update_equity(equity);
+                    self.risk_engine.update_equity(equity);
+                } else {
+                    warn!(
+                        journal_equity = %equity,
+                        config_capital = %config_capital,
+                        "Journal equity differs too much from config, using config capital"
+                    );
+                }
             }
         }
 

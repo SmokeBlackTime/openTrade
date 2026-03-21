@@ -126,13 +126,17 @@ impl TradingBrain {
         );
 
         // Determine models for collective thinking
+        // Include models from ALL enabled servers so each server gets a vote
         let models = if config.neural.collective_thinking {
-            let mut models = vec![config.neural.default_model.clone()];
-            if let Some(ref reasoning) = config.neural.reasoning_model {
-                models.push(reasoning.clone());
-            }
-            if let Some(ref classify) = config.neural.classify_model {
-                models.push(classify.clone());
+            let mut models: Vec<String> = config
+                .neural
+                .ollama_servers
+                .iter()
+                .filter(|s| s.enabled)
+                .flat_map(|s| s.models.iter().cloned())
+                .collect();
+            if models.is_empty() {
+                models.push(config.neural.default_model.clone());
             }
             // Deduplicate
             models.sort();
