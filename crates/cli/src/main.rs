@@ -837,6 +837,20 @@ async fn cmd_live(
         config.exchange.proxy_url.clone(),
     );
 
+    // Check actual exchange balance at startup
+    match client.get_account_balance("USDT").await {
+        Ok(balance) => {
+            println!("=== Futures USDT balance: ${} ===", balance);
+            if balance < rust_decimal_macros::dec!(5) {
+                println!("WARNING: Balance is very low (< $5). Orders will likely fail with 'Margin insufficient'.");
+                println!("Transfer USDT to your Futures wallet via Binance app.");
+            }
+        }
+        Err(e) => {
+            warn!(error = %e, "Failed to fetch account balance");
+        }
+    }
+
     // Start user data stream for order updates
     let listen_key = client
         .start_user_data_stream()

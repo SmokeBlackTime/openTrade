@@ -5,7 +5,7 @@ use ot_types::orders::*;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use std::str::FromStr;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::auth::sign_query;
 use crate::types::*;
@@ -337,7 +337,7 @@ impl BinanceClient {
         query.push_str(&format!("&signature={}", signature));
 
         let url = format!("{}{}?{}", self.base_url, self.order_path(), query);
-        debug!("Placing order: {} {} {} {}", req.symbol, side_str, type_str, quantity);
+        info!("Placing order: {} {} {} qty={} notional={}", req.symbol, side_str, type_str, quantity, quantity * req.price.unwrap_or_default());
 
         let resp = self
             .http

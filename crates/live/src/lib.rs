@@ -381,7 +381,13 @@ impl TradingEngine {
             }
             Err(e) => {
                 error!(error = %e, "Failed to submit order");
-                self.risk_engine.record_order_rejection();
+                // Only count as anomaly if NOT a margin/sizing error
+                let err_str = e.to_string();
+                if !err_str.contains("-2019") && !err_str.contains("Margin is insufficient") {
+                    self.risk_engine.record_order_rejection();
+                } else {
+                    warn!("Margin insufficient — not counting as rejection anomaly");
+                }
                 self.pending_signals.remove(&entry_id);
             }
         }
