@@ -378,7 +378,7 @@ neural_brain:
     - name: gpu-server-2
       base_url: "http://192.168.1.131:11434"
       weight: 1
-      models: ["qwen-trading:latest"]
+      models: ["qwen-ot:latest"]
       enabled: true
   default_model: "qwen-trading:latest"
   classify_model: "qwen-trading:latest"
