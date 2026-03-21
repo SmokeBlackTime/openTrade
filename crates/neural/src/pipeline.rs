@@ -11,7 +11,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// Classification result from the first pipeline stage.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,8 +168,9 @@ impl NeuralPipeline {
 
         // Stage 2: Route
         let route = self.route(&classification).await;
-        debug!(
-            branch_models = ?route.branch_models,
+        info!(
+            branches = route.branch_models.len(),
+            servers = ?route.branch_servers,
             "Pipeline: routed"
         );
 
@@ -292,7 +293,15 @@ Respond with JSON:
 
     /// Stage 2: Route to the best model/server for each branch.
     async fn route(&self, classification: &Classification) -> RouteDecision {
-        let branch_count = classification.branch_count as usize;
+        let num_servers = self
+            .config
+            .ollama_servers
+            .iter()
+            .filter(|s| s.enabled)
+            .count();
+
+        // Force at least as many branches as servers so every server gets work.
+        let branch_count = (classification.branch_count as usize).max(num_servers).max(1);
         let reasoning_model = self
             .config
             .reasoning_model
