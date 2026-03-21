@@ -10,6 +10,7 @@ use crate::{NeuralConfig, PipelineStage, ThinkingEvent, ThinkingStatus};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::{debug, info, warn};
 
 /// Classification result from the first pipeline stage.
@@ -100,6 +101,8 @@ pub struct NeuralPipeline {
     config: NeuralConfig,
     /// Trace of all events for observability.
     events: Vec<ThinkingEvent>,
+    /// Round-robin counter for distributing work across servers.
+    server_rotation: AtomicUsize,
 }
 
 impl NeuralPipeline {
@@ -108,6 +111,7 @@ impl NeuralPipeline {
             pool,
             config,
             events: Vec::new(),
+            server_rotation: AtomicUsize::new(0),
         }
     }
 
@@ -199,11 +203,17 @@ Respond with JSON:
             ..Default::default()
         };
 
-        match self
-            .pool
-            .chat(&classify_model, messages, Some(options), true)
-            .await
-        {
+        // Route classify to a specific server using rotation
+        let servers = self.pool.servers_for_model(&classify_model).await;
+        let classify_result = if servers.is_empty() {
+            self.pool.chat(&classify_model, messages, Some(options), true).await
+        } else {
+            let idx = self.server_rotation.fetch_add(1, Ordering::Relaxed);
+            let server_name = &servers[idx % servers.len()];
+            self.pool.chat_on_server(server_name, &classify_model, messages, Some(options), true).await
+        };
+
+        match classify_result {
             Ok((resp, server)) => {
                 // Update event
                 if let Some(event) = self.events.iter_mut().find(|e| e.id == event_id) {
@@ -312,13 +322,16 @@ Respond with JSON:
             })
             .collect();
 
-        // Distribute branches across available servers in round-robin fashion
+        // Distribute branches across available servers in round-robin fashion.
+        // The rotation counter persists across calls so single-branch requests
+        // alternate between servers instead of always hitting servers[0].
         let servers = self.pool.servers_for_model(&reasoning_model).await;
         let branch_servers: Vec<Option<String>> = if servers.is_empty() {
             vec![None; branch_count]
         } else {
+            let start = self.server_rotation.fetch_add(branch_count, Ordering::Relaxed);
             (0..branch_count)
-                .map(|i| Some(servers[i % servers.len()].clone()))
+                .map(|i| Some(servers[(start + i) % servers.len()].clone()))
                 .collect()
         };
 
@@ -507,11 +520,17 @@ Respond with JSON:
             ..Default::default()
         };
 
-        match self
-            .pool
-            .chat(&self.config.default_model, messages, Some(options), false)
-            .await
-        {
+        // Route synthesis to a specific server using rotation
+        let synth_servers = self.pool.servers_for_model(&self.config.default_model).await;
+        let synth_result = if synth_servers.is_empty() {
+            self.pool.chat(&self.config.default_model, messages, Some(options), false).await
+        } else {
+            let idx = self.server_rotation.fetch_add(1, Ordering::Relaxed);
+            let server_name = &synth_servers[idx % synth_servers.len()];
+            self.pool.chat_on_server(server_name, &self.config.default_model, messages, Some(options), false).await
+        };
+
+        match synth_result {
             Ok((resp, _)) => {
                 let reasoning_chain = results
                     .iter()
