@@ -8,10 +8,22 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use tracing::{error, info, warn};
 
-use crate::types::{WsKlineEvent, WsUserDataEvent, WsExecutionReport};
+use crate::types::{WsKlineEvent, WsUserDataEvent, WsExecutionReport, WsFuturesOrder};
 
 const BINANCE_WS_SPOT: &str = "wss://stream.binance.com:9443/ws";
 const BINANCE_WS_TESTNET: &str = "wss://stream.testnet.binance.vision/ws";
+const BINANCE_WS_FUTURES: &str = "wss://fstream.binance.com/ws";
+const BINANCE_WS_FUTURES_TESTNET: &str = "wss://stream.binancefuture.com/ws";
+
+/// Resolve the WebSocket base URL based on futures/testnet settings.
+fn ws_base_url(use_testnet: bool, is_futures: bool) -> &'static str {
+    match (is_futures, use_testnet) {
+        (true, true) => BINANCE_WS_FUTURES_TESTNET,
+        (true, false) => BINANCE_WS_FUTURES,
+        (false, true) => BINANCE_WS_TESTNET,
+        (false, false) => BINANCE_WS_SPOT,
+    }
+}
 
 /// Subscribe to kline/candle stream for a symbol.
 pub async fn subscribe_klines(
@@ -20,16 +32,24 @@ pub async fn subscribe_klines(
     use_testnet: bool,
     buffer_size: usize,
 ) -> Result<mpsc::Receiver<Candle>, OtError> {
+    subscribe_klines_ext(symbol, interval, use_testnet, false, buffer_size).await
+}
+
+/// Subscribe to kline/candle stream with explicit futures flag.
+pub async fn subscribe_klines_ext(
+    symbol: &str,
+    interval: &str,
+    use_testnet: bool,
+    is_futures: bool,
+    buffer_size: usize,
+) -> Result<mpsc::Receiver<Candle>, OtError> {
     let stream_name = format!("{}@kline_{}", symbol.to_lowercase(), interval);
-    let base = if use_testnet {
-        BINANCE_WS_TESTNET
-    } else {
-        BINANCE_WS_SPOT
-    };
+    let base = ws_base_url(use_testnet, is_futures);
     let url = format!("{}/{}", base, stream_name);
 
     let (tx, rx) = mpsc::channel(buffer_size);
     let sym = Symbol::new(symbol);
+    let market_type = if is_futures { MarketType::UsdtFutures } else { MarketType::Spot };
     let tf = match interval {
         "1m" => Timeframe::M1,
         "5m" => Timeframe::M5,
@@ -61,7 +81,7 @@ pub async fn subscribe_klines(
                                             |s: &str| Decimal::from_str(s).unwrap_or(Decimal::ZERO);
                                         let candle = Candle {
                                             symbol: sym.clone(),
-                                            market_type: MarketType::Spot,
+                                            market_type,
                                             timeframe: tf,
                                             open_time: ot_common::time_utils::ms_to_datetime(
                                                 event.kline.start_time,
@@ -162,17 +182,56 @@ fn parse_execution_report(report: &WsExecutionReport) -> OrderUpdateEvent {
     }
 }
 
+/// Parse a futures ORDER_TRADE_UPDATE order into OrderUpdateEvent.
+fn parse_futures_order(order: &WsFuturesOrder) -> OrderUpdateEvent {
+    let parse = |s: &str| Decimal::from_str(s).unwrap_or(Decimal::ZERO);
+    let side = match order.side.as_str() {
+        "BUY" => Side::Buy,
+        _ => Side::Sell,
+    };
+    let status = match order.order_status.as_str() {
+        "NEW" => OrderStatus::Submitted,
+        "PARTIALLY_FILLED" => OrderStatus::PartiallyFilled,
+        "FILLED" => OrderStatus::Filled,
+        "CANCELED" | "CANCELLED" => OrderStatus::Cancelled,
+        "REJECTED" => OrderStatus::Rejected,
+        "EXPIRED" => OrderStatus::Expired,
+        _ => OrderStatus::Submitted,
+    };
+
+    OrderUpdateEvent {
+        symbol: order.symbol.clone(),
+        client_order_id: order.client_order_id.clone(),
+        side,
+        status,
+        exchange_order_id: order.order_id,
+        filled_quantity: parse(&order.cumulative_filled_qty),
+        cumulative_quote_qty: parse(&order.cumulative_quote_qty),
+        last_fill_price: parse(&order.last_filled_price),
+        last_fill_qty: parse(&order.last_filled_qty),
+        commission: parse(&order.commission),
+        commission_asset: order.commission_asset.clone().unwrap_or_default(),
+        transaction_time: order.transaction_time,
+    }
+}
+
 /// Subscribe to user data stream for order execution updates.
 pub async fn subscribe_user_data(
     listen_key: &str,
     use_testnet: bool,
     buffer_size: usize,
 ) -> Result<mpsc::Receiver<OrderUpdateEvent>, OtError> {
-    let base = if use_testnet {
-        BINANCE_WS_TESTNET
-    } else {
-        BINANCE_WS_SPOT
-    };
+    subscribe_user_data_ext(listen_key, use_testnet, false, buffer_size).await
+}
+
+/// Subscribe to user data stream with explicit futures flag.
+pub async fn subscribe_user_data_ext(
+    listen_key: &str,
+    use_testnet: bool,
+    is_futures: bool,
+    buffer_size: usize,
+) -> Result<mpsc::Receiver<OrderUpdateEvent>, OtError> {
+    let base = ws_base_url(use_testnet, is_futures);
     let url = format!("{}/{}", base, listen_key);
 
     let (tx, rx) = mpsc::channel(buffer_size);
@@ -196,6 +255,13 @@ pub async fn subscribe_user_data(
                                 match serde_json::from_str::<WsUserDataEvent>(&text) {
                                     Ok(WsUserDataEvent::ExecutionReport(report)) => {
                                         let update = parse_execution_report(&report);
+                                        if tx.send(update).await.is_err() {
+                                            info!("User data receiver dropped, stopping");
+                                            return;
+                                        }
+                                    }
+                                    Ok(WsUserDataEvent::OrderTradeUpdate(otu)) => {
+                                        let update = parse_futures_order(&otu.order);
                                         if tx.send(update).await.is_err() {
                                             info!("User data receiver dropped, stopping");
                                             return;

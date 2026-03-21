@@ -67,8 +67,12 @@ impl std::fmt::Display for TradingMode {
 pub struct ExchangeConfig {
     pub name: String,
     pub use_testnet: bool,
+    /// Use futures (USDT-M) endpoints instead of spot.
+    /// When true, uses fapi.binance.com and fstream.binance.com.
+    #[serde(default)]
+    pub use_futures: bool,
     /// Optional custom REST API base URL (e.g. "https://api1.binance.com").
-    /// If not set, defaults to api.binance.com or testnet.binance.vision.
+    /// If not set, defaults based on use_testnet and use_futures.
     #[serde(default)]
     pub base_url: Option<String>,
     /// API key loaded from env var name (not the key itself).

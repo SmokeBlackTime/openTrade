@@ -11,7 +11,8 @@ mode: paper
 
 exchange:
   name: binance
-  use_testnet: true
+  use_testnet: false
+  use_futures: true
   api_key_env: BINANCE_API_KEY
   api_secret_env: BINANCE_API_SECRET
   rate_limit_per_minute: 1200

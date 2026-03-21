@@ -17,11 +17,12 @@ pub struct BinanceClient {
     api_secret: String,
     base_url: String,
     recv_window: u64,
+    is_futures: bool,
 }
 
 impl BinanceClient {
     pub fn new(api_key: String, api_secret: String, use_testnet: bool) -> Self {
-        Self::with_base_url(api_key, api_secret, use_testnet, None)
+        Self::with_base_url(api_key, api_secret, use_testnet, None, false)
     }
 
     pub fn with_base_url(
@@ -29,9 +30,16 @@ impl BinanceClient {
         api_secret: String,
         use_testnet: bool,
         custom_base_url: Option<String>,
+        is_futures: bool,
     ) -> Self {
         let base_url = custom_base_url.unwrap_or_else(|| {
-            if use_testnet {
+            if is_futures {
+                if use_testnet {
+                    "https://testnet.binancefuture.com".to_string()
+                } else {
+                    "https://fapi.binance.com".to_string()
+                }
+            } else if use_testnet {
                 "https://testnet.binance.vision".to_string()
             } else {
                 "https://api.binance.com".to_string()
@@ -47,26 +55,34 @@ impl BinanceClient {
             api_secret,
             base_url,
             recv_window: 5000,
+            is_futures,
         }
     }
 
     pub fn futures(api_key: String, api_secret: String, use_testnet: bool) -> Self {
-        let base_url = if use_testnet {
-            "https://testnet.binancefuture.com".to_string()
-        } else {
-            "https://fapi.binance.com".to_string()
-        };
+        Self::with_base_url(api_key, api_secret, use_testnet, None, true)
+    }
 
-        Self {
-            http: Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to build HTTP client"),
-            api_key,
-            api_secret,
-            base_url,
-            recv_window: 5000,
-        }
+    /// Returns true if this client is configured for futures trading.
+    pub fn is_futures(&self) -> bool {
+        self.is_futures
+    }
+
+    /// Returns the API path prefix based on spot vs futures mode.
+    fn order_path(&self) -> &str {
+        if self.is_futures { "/fapi/v1/order" } else { "/api/v3/order" }
+    }
+
+    fn account_path(&self) -> &str {
+        if self.is_futures { "/fapi/v2/account" } else { "/api/v3/account" }
+    }
+
+    fn open_orders_path(&self) -> &str {
+        if self.is_futures { "/fapi/v1/openOrders" } else { "/api/v3/openOrders" }
+    }
+
+    fn user_data_stream_path(&self) -> &str {
+        if self.is_futures { "/fapi/v1/listenKey" } else { "/api/v3/userDataStream" }
     }
 
     fn timestamp_ms() -> i64 {
@@ -175,7 +191,8 @@ impl BinanceClient {
 
     /// Get current price.
     pub async fn get_price(&self, symbol: &str) -> Result<Decimal, OtError> {
-        let url = format!("{}/api/v3/ticker/price?symbol={}", self.base_url, symbol);
+        let ticker_path = if self.is_futures { "/fapi/v1/ticker/price" } else { "/api/v3/ticker/price" };
+        let url = format!("{}{}?symbol={}", self.base_url, ticker_path, symbol);
         let resp: BinanceTickerPrice = self
             .http
             .get(&url)
@@ -192,10 +209,8 @@ impl BinanceClient {
 
     /// Get best bid/ask.
     pub async fn get_book_ticker(&self, symbol: &str) -> Result<TopOfBook, OtError> {
-        let url = format!(
-            "{}/api/v3/ticker/bookTicker?symbol={}",
-            self.base_url, symbol
-        );
+        let book_path = if self.is_futures { "/fapi/v1/ticker/bookTicker" } else { "/api/v3/ticker/bookTicker" };
+        let url = format!("{}{}?symbol={}", self.base_url, book_path, symbol);
         let resp: BinanceBookTicker = self
             .http
             .get(&url)
@@ -268,7 +283,7 @@ impl BinanceClient {
         let signature = sign_query(&query, &self.api_secret);
         query.push_str(&format!("&signature={}", signature));
 
-        let url = format!("{}/api/v3/order?{}", self.base_url, query);
+        let url = format!("{}{}?{}", self.base_url, self.order_path(), query);
         debug!("Placing order: {} {} {} {}", req.symbol, side_str, type_str, req.quantity);
 
         let resp = self
@@ -306,7 +321,7 @@ impl BinanceClient {
         let signature = sign_query(&query, &self.api_secret);
         query.push_str(&format!("&signature={}", signature));
 
-        let url = format!("{}/api/v3/order?{}", self.base_url, query);
+        let url = format!("{}{}?{}", self.base_url, self.order_path(), query);
         debug!("Cancelling order: {} {}", symbol, client_order_id);
 
         let resp = self
@@ -343,7 +358,7 @@ impl BinanceClient {
         let signature = sign_query(&query, &self.api_secret);
         query.push_str(&format!("&signature={}", signature));
 
-        let url = format!("{}/api/v3/order?{}", self.base_url, query);
+        let url = format!("{}{}?{}", self.base_url, self.order_path(), query);
         debug!("Querying order: {} {}", symbol, client_order_id);
 
         let resp = self
@@ -377,7 +392,7 @@ impl BinanceClient {
         let signature = sign_query(&query, &self.api_secret);
         query.push_str(&format!("&signature={}", signature));
 
-        let url = format!("{}/api/v3/account?{}", self.base_url, query);
+        let url = format!("{}{}?{}", self.base_url, self.account_path(), query);
         debug!("Fetching account info");
 
         let resp = self
@@ -396,16 +411,32 @@ impl BinanceClient {
             return Err(OtError::Exchange(ExchangeError::Http(body)));
         }
 
-        let account: BinanceAccountInfo = resp
-            .json()
-            .await
-            .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))?;
+        if self.is_futures {
+            // Futures: /fapi/v2/account returns { assets: [{ asset, walletBalance, ... }] }
+            let account: BinanceFuturesAccountInfo = resp
+                .json()
+                .await
+                .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))?;
 
-        for balance in &account.balances {
-            if balance.asset == asset {
-                let free = Decimal::from_str(&balance.free).unwrap_or(Decimal::ZERO);
-                let locked = Decimal::from_str(&balance.locked).unwrap_or(Decimal::ZERO);
-                return Ok(free + locked);
+            for a in &account.assets {
+                if a.asset == asset {
+                    let balance = Decimal::from_str(&a.wallet_balance).unwrap_or(Decimal::ZERO);
+                    return Ok(balance);
+                }
+            }
+        } else {
+            // Spot: /api/v3/account returns { balances: [{ asset, free, locked }] }
+            let account: BinanceAccountInfo = resp
+                .json()
+                .await
+                .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))?;
+
+            for balance in &account.balances {
+                if balance.asset == asset {
+                    let free = Decimal::from_str(&balance.free).unwrap_or(Decimal::ZERO);
+                    let locked = Decimal::from_str(&balance.locked).unwrap_or(Decimal::ZERO);
+                    return Ok(free + locked);
+                }
             }
         }
 
@@ -421,7 +452,7 @@ impl BinanceClient {
         let signature = sign_query(&query, &self.api_secret);
         query.push_str(&format!("&signature={}", signature));
 
-        let url = format!("{}/api/v3/openOrders?{}", self.base_url, query);
+        let url = format!("{}{}?{}", self.base_url, self.open_orders_path(), query);
         debug!("Fetching open orders for {}", symbol);
 
         let resp = self
@@ -447,7 +478,7 @@ impl BinanceClient {
 
     /// Start a user data stream (returns listen key).
     pub async fn start_user_data_stream(&self) -> Result<String, OtError> {
-        let url = format!("{}/api/v3/userDataStream", self.base_url);
+        let url = format!("{}{}", self.base_url, self.user_data_stream_path());
 
         let resp = self
             .http
@@ -476,8 +507,8 @@ impl BinanceClient {
     /// Keep alive user data stream.
     pub async fn keepalive_user_data_stream(&self, listen_key: &str) -> Result<(), OtError> {
         let url = format!(
-            "{}/api/v3/userDataStream?listenKey={}",
-            self.base_url, listen_key
+            "{}{}?listenKey={}",
+            self.base_url, self.user_data_stream_path(), listen_key
         );
 
         let resp = self
@@ -508,7 +539,8 @@ impl BinanceClient {
         let signature = sign_query(&query, &self.api_secret);
         query.push_str(&format!("&signature={}", signature));
 
-        let url = format!("{}/api/v3/openOrders?{}", self.base_url, query);
+        let cancel_path = if self.is_futures { "/fapi/v1/allOpenOrders" } else { "/api/v3/openOrders" };
+        let url = format!("{}{}?{}", self.base_url, cancel_path, query);
         warn!("Cancelling all orders for {}", symbol);
 
         let resp = self

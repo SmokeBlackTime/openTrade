@@ -121,6 +121,24 @@ pub struct BinanceAccountInfo {
     pub balances: Vec<BinanceBalance>,
 }
 
+/// Binance futures account info response (/fapi/v2/account).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceFuturesAccountInfo {
+    #[serde(default)]
+    pub assets: Vec<BinanceFuturesAsset>,
+}
+
+/// Binance futures asset balance.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceFuturesAsset {
+    pub asset: String,
+    pub wallet_balance: String,
+    #[serde(default)]
+    pub available_balance: String,
+}
+
 /// Binance listen key response.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -173,8 +191,59 @@ pub struct WsExecutionReport {
 pub enum WsUserDataEvent {
     #[serde(rename = "executionReport")]
     ExecutionReport(WsExecutionReport),
+    /// Futures order update event (ORDER_TRADE_UPDATE).
+    #[serde(rename = "ORDER_TRADE_UPDATE")]
+    OrderTradeUpdate(WsFuturesOrderUpdate),
     #[serde(other)]
     Other,
+}
+
+/// Futures ORDER_TRADE_UPDATE wrapper.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsFuturesOrderUpdate {
+    /// Event time.
+    #[serde(rename = "E")]
+    pub event_time: i64,
+    /// The order data is nested under "o".
+    #[serde(rename = "o")]
+    pub order: WsFuturesOrder,
+}
+
+/// Futures order detail inside ORDER_TRADE_UPDATE.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsFuturesOrder {
+    #[serde(rename = "s")]
+    pub symbol: String,
+    #[serde(rename = "c")]
+    pub client_order_id: String,
+    #[serde(rename = "S")]
+    pub side: String,
+    #[serde(rename = "o")]
+    pub order_type: String,
+    #[serde(rename = "q")]
+    pub orig_quantity: String,
+    #[serde(rename = "p")]
+    pub price: String,
+    #[serde(rename = "X")]
+    pub order_status: String,
+    #[serde(rename = "i")]
+    pub order_id: u64,
+    #[serde(rename = "l")]
+    pub last_filled_qty: String,
+    #[serde(rename = "L")]
+    pub last_filled_price: String,
+    #[serde(rename = "z")]
+    pub cumulative_filled_qty: String,
+    #[serde(rename = "Z")]
+    pub cumulative_quote_qty: String,
+    #[serde(rename = "n")]
+    pub commission: String,
+    #[serde(rename = "N")]
+    pub commission_asset: Option<String>,
+    #[serde(rename = "T")]
+    pub transaction_time: i64,
+    #[serde(rename = "rp", default)]
+    pub realized_profit: String,
 }
 
 /// Exchange info for symbol filters.

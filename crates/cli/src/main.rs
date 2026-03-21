@@ -234,6 +234,7 @@ async fn cmd_doctor(config: &ot_config::AppConfig) -> Result<()> {
         api_secret.clone(),
         config.exchange.use_testnet,
         config.exchange.base_url.clone(),
+        config.exchange.use_futures,
     );
 
     for sym_config in &config.symbols {
@@ -328,6 +329,7 @@ async fn cmd_ingest(
         api_secret,
         config.exchange.use_testnet,
         config.exchange.base_url.clone(),
+        config.exchange.use_futures,
     );
 
     let start_date = NaiveDate::parse_from_str(start, "%Y-%m-%d")
@@ -638,10 +640,11 @@ async fn cmd_paper(config: &ot_config::AppConfig, run_id: Option<String>) -> Res
         }
         for tf in &sym_config.timeframes {
             let interval = tf.as_binance_str();
-            match ot_exchange_binance::ws::subscribe_klines(
+            match ot_exchange_binance::ws::subscribe_klines_ext(
                 sym_config.symbol.as_str(),
                 interval,
                 config.exchange.use_testnet,
+                config.exchange.use_futures,
                 100,
             )
             .await
@@ -772,6 +775,7 @@ async fn cmd_live(
         api_secret,
         config.exchange.use_testnet,
         config.exchange.base_url.clone(),
+        config.exchange.use_futures,
     );
 
     // Start user data stream for order updates
@@ -787,6 +791,7 @@ async fn cmd_live(
             config.resolve_api_secret()?,
             config.exchange.use_testnet,
             config.exchange.base_url.clone(),
+            config.exchange.use_futures,
         ),
     ));
 
@@ -809,10 +814,11 @@ async fn cmd_live(
         }
         for tf in &sym_config.timeframes {
             let interval = tf.as_binance_str();
-            match ot_exchange_binance::ws::subscribe_klines(
+            match ot_exchange_binance::ws::subscribe_klines_ext(
                 sym_config.symbol.as_str(),
                 interval,
                 config.exchange.use_testnet,
+                config.exchange.use_futures,
                 100,
             )
             .await
@@ -829,9 +835,10 @@ async fn cmd_live(
     }
 
     // Subscribe to user data stream for order updates
-    let mut user_data_rx = ot_exchange_binance::ws::subscribe_user_data(
+    let mut user_data_rx = ot_exchange_binance::ws::subscribe_user_data_ext(
         &listen_key,
         config.exchange.use_testnet,
+        config.exchange.use_futures,
         100,
     )
     .await
@@ -857,6 +864,7 @@ async fn cmd_live(
         config.resolve_api_secret()?,
         config.exchange.use_testnet,
         config.exchange.base_url.clone(),
+        config.exchange.use_futures,
     );
     let keepalive_key = listen_key.clone();
     tokio::spawn(async move {
@@ -961,7 +969,7 @@ async fn cmd_flatten(config: &ot_config::AppConfig, confirm: bool) -> Result<()>
         Arc::new(ot_paper::PaperExchange::new(dec!(0), dec!(0), dec!(0)))
     } else {
         Arc::new(ot_exchange_binance::BinanceExchangeAdapter::new(
-            ot_exchange_binance::BinanceClient::with_base_url(api_key, api_secret, config.exchange.use_testnet, config.exchange.base_url.clone()),
+            ot_exchange_binance::BinanceClient::with_base_url(api_key, api_secret, config.exchange.use_testnet, config.exchange.base_url.clone(), config.exchange.use_futures),
         ))
     };
 
@@ -1006,6 +1014,7 @@ async fn cmd_cancel_all(
         api_secret,
         config.exchange.use_testnet,
         config.exchange.base_url.clone(),
+        config.exchange.use_futures,
     );
 
     let symbols: Vec<String> = if let Some(s) = symbol {
