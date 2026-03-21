@@ -299,7 +299,7 @@ impl TradingEngine {
         }
 
         // Ensure qty meets both minimum notional AND minimum step size after truncation.
-        // Binance futures requires notional >= 5 USDT, and qty must survive precision truncation.
+        // Binance futures requires notional >= 100 USDT, and qty must survive precision truncation.
         let min_notional = self.config.execution.min_order_size_usd;
         let min_step = match signal.symbol.as_str() {
             "BTCUSDT" => dec!(0.001),   // 3 decimals
@@ -322,14 +322,19 @@ impl TradingEngine {
         };
         let (size, _notional) = if size < effective_min_qty {
             let bumped_notional = effective_min_qty * candle.close;
+            let equity = self.portfolio.equity();
             // Safety check: don't exceed equity * max_leverage
-            let max_allowed = self.portfolio.equity() * self.config.portfolio.max_portfolio_leverage;
-            if bumped_notional > max_allowed {
-                warn!(
+            let max_allowed = equity * self.config.portfolio.max_portfolio_leverage;
+            // Also check if the required margin (notional / leverage) exceeds equity.
+            // Binance requires sufficient USDT balance to cover initial margin.
+            let required_margin = bumped_notional / self.config.risk.max_leverage;
+            if bumped_notional > max_allowed || required_margin > equity {
+                info!(
                     needed_notional = %bumped_notional,
-                    max_allowed = %max_allowed,
+                    required_margin = %required_margin,
+                    equity = %equity,
                     symbol = %signal.symbol,
-                    "Cannot meet minimum order size within leverage limits, skipping"
+                    "Equity too low for exchange minimum notional, skipping"
                 );
                 return Ok(());
             }

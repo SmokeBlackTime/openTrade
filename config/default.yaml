@@ -328,7 +328,7 @@ execution:
   reconciliation_interval_secs: 30
   smart_order_splitting: true
   max_split_orders: 10
-  min_order_size_usd: "5"
+  min_order_size_usd: "100"
 
 backtest:
   start_date: "2024-01-01"

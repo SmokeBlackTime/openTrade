@@ -115,6 +115,40 @@ impl NeuralPipeline {
         }
     }
 
+    /// Pick the next server in round-robin order from enabled config servers.
+    fn next_server(&self) -> Option<String> {
+        let servers: Vec<&str> = self
+            .config
+            .ollama_servers
+            .iter()
+            .filter(|s| s.enabled)
+            .map(|s| s.name.as_str())
+            .collect();
+        if servers.is_empty() {
+            return None;
+        }
+        let idx = self.server_rotation.fetch_add(1, Ordering::Relaxed);
+        Some(servers[idx % servers.len()].to_string())
+    }
+
+    /// Route a chat request through the round-robin server rotation.
+    /// Falls back to pool.chat() if no servers are configured.
+    async fn chat_rotated(
+        &self,
+        model: &str,
+        messages: Vec<ChatMessage>,
+        options: Option<OllamaOptions>,
+        json_mode: bool,
+    ) -> Result<(crate::ollama::ChatResponse, String), crate::ollama::OllamaError> {
+        if let Some(server) = self.next_server() {
+            self.pool
+                .chat_on_server(&server, model, messages, options, json_mode)
+                .await
+        } else {
+            self.pool.chat(model, messages, options, json_mode).await
+        }
+    }
+
     /// Run the full pipeline on a prompt.
     pub async fn process(
         &mut self,
@@ -203,17 +237,7 @@ Respond with JSON:
             ..Default::default()
         };
 
-        // Route classify to a specific server using rotation
-        let servers = self.pool.servers_for_model(&classify_model).await;
-        let classify_result = if servers.is_empty() {
-            self.pool.chat(&classify_model, messages, Some(options), true).await
-        } else {
-            let idx = self.server_rotation.fetch_add(1, Ordering::Relaxed);
-            let server_name = &servers[idx % servers.len()];
-            self.pool.chat_on_server(server_name, &classify_model, messages, Some(options), true).await
-        };
-
-        match classify_result {
+        match self.chat_rotated(&classify_model, messages, Some(options), true).await {
             Ok((resp, server)) => {
                 // Update event
                 if let Some(event) = self.events.iter_mut().find(|e| e.id == event_id) {
@@ -322,18 +346,10 @@ Respond with JSON:
             })
             .collect();
 
-        // Distribute branches across available servers in round-robin fashion.
-        // The rotation counter persists across calls so single-branch requests
-        // alternate between servers instead of always hitting servers[0].
-        let servers = self.pool.servers_for_model(&reasoning_model).await;
-        let branch_servers: Vec<Option<String>> = if servers.is_empty() {
-            vec![None; branch_count]
-        } else {
-            let start = self.server_rotation.fetch_add(branch_count, Ordering::Relaxed);
-            (0..branch_count)
-                .map(|i| Some(servers[(start + i) % servers.len()].clone()))
-                .collect()
-        };
+        // Distribute branches across enabled servers using round-robin rotation.
+        let branch_servers: Vec<Option<String>> = (0..branch_count)
+            .map(|_| self.next_server())
+            .collect();
 
         RouteDecision {
             branch_models: vec![reasoning_model; branch_count],
@@ -520,17 +536,7 @@ Respond with JSON:
             ..Default::default()
         };
 
-        // Route synthesis to a specific server using rotation
-        let synth_servers = self.pool.servers_for_model(&self.config.default_model).await;
-        let synth_result = if synth_servers.is_empty() {
-            self.pool.chat(&self.config.default_model, messages, Some(options), false).await
-        } else {
-            let idx = self.server_rotation.fetch_add(1, Ordering::Relaxed);
-            let server_name = &synth_servers[idx % synth_servers.len()];
-            self.pool.chat_on_server(server_name, &self.config.default_model, messages, Some(options), false).await
-        };
-
-        match synth_result {
+        match self.chat_rotated(&self.config.default_model, messages, Some(options), false).await {
             Ok((resp, _)) => {
                 let reasoning_chain = results
                     .iter()
