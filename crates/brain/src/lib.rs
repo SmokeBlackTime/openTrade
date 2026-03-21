@@ -205,26 +205,28 @@ impl TradingBrain {
             return;
         }
 
-        // Warm up all configured models by sending a tiny request to each.
-        // This forces Ollama to load the model into memory on each server.
-        let all_models: Vec<String> = self
-            .config
-            .neural
-            .ollama_servers
-            .iter()
-            .filter(|s| s.enabled)
-            .flat_map(|s| s.models.iter().cloned())
-            .collect();
-
-        for model in &all_models {
-            info!(model = %model, "Warming up model (preloading into memory)...");
-            let messages = vec![ChatMessage::user("ping".to_string())];
-            match self.pool.chat(model, messages, None, false).await {
-                Ok((_, server)) => {
-                    info!(model = %model, server = %server, "Model warmed up successfully");
-                }
-                Err(e) => {
-                    warn!(model = %model, error = %e, "Failed to warm up model");
+        // Warm up every (server, model) pair individually.
+        // This forces Ollama to load the model into memory on EACH server.
+        for server_cfg in self.config.neural.ollama_servers.iter().filter(|s| s.enabled) {
+            for model in &server_cfg.models {
+                info!(
+                    server = %server_cfg.name,
+                    model = %model,
+                    "Warming up model on server (preloading into memory)..."
+                );
+                let messages = vec![ChatMessage::user("ping".to_string())];
+                match self.pool.chat_on_server(&server_cfg.name, model, messages, None, false).await {
+                    Ok((_, server)) => {
+                        info!(model = %model, server = %server, "Model warmed up successfully");
+                    }
+                    Err(e) => {
+                        warn!(
+                            server = %server_cfg.name,
+                            model = %model,
+                            error = %e,
+                            "Failed to warm up model on server"
+                        );
+                    }
                 }
             }
         }
