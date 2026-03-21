@@ -33,7 +33,8 @@ use tracing::{error, info, warn};
 /// The core trading engine.
 pub struct TradingEngine {
     config: AppConfig,
-    strategies: Vec<Box<dyn Strategy>>,
+    /// Each strategy paired with its allowed symbols (empty = all symbols).
+    strategies: Vec<(Box<dyn Strategy>, Vec<String>)>,
     risk_engine: RiskEngine,
     portfolio: PortfolioManager,
     order_manager: OrderManager,
@@ -47,7 +48,7 @@ pub struct TradingEngine {
 impl TradingEngine {
     pub fn new(
         config: AppConfig,
-        strategies: Vec<Box<dyn Strategy>>,
+        strategies: Vec<(Box<dyn Strategy>, Vec<String>)>,
         exchange: Arc<dyn ExchangeAdapter>,
     ) -> Self {
         let risk_engine =
@@ -238,7 +239,14 @@ impl TradingEngine {
 
         // Collect signals first (avoid borrowing self mutably twice)
         let mut signals = Vec::new();
-        for strategy in &mut self.strategies {
+        for (strategy, allowed_symbols) in &mut self.strategies {
+            // Skip strategies that don't trade this symbol
+            if !allowed_symbols.is_empty()
+                && !allowed_symbols.iter().any(|s| s == candle.symbol.as_str())
+            {
+                continue;
+            }
+
             let position = self
                 .portfolio
                 .get_position(&candle.symbol, strategy.name())
@@ -291,7 +299,7 @@ impl TradingEngine {
         }
 
         // Ensure qty meets both minimum notional AND minimum step size after truncation.
-        // Binance futures requires notional >= 100 USDT, and qty must survive precision truncation.
+        // Binance futures requires notional >= 5 USDT, and qty must survive precision truncation.
         let min_notional = self.config.execution.min_order_size_usd;
         let min_step = match signal.symbol.as_str() {
             "BTCUSDT" => dec!(0.001),   // 3 decimals

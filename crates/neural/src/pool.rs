@@ -286,6 +286,27 @@ impl OllamaPool {
     pub async fn total_count(&self) -> usize {
         self.entries.read().await.len()
     }
+
+    /// Get the names of healthy servers that have the given model.
+    pub async fn servers_for_model(&self, model: &str) -> Vec<String> {
+        let entries = self.entries.read().await;
+        let idx = self.model_index.read().await;
+        if let Some(indices) = idx.get(model) {
+            indices
+                .iter()
+                .filter_map(|&i| {
+                    let e = &entries[i];
+                    if e.health.is_healthy {
+                        Some(e.health.name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            vec![]
+        }
+    }
 }
 
 #[cfg(test)]

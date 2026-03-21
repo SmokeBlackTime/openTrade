@@ -312,9 +312,19 @@ Respond with JSON:
             })
             .collect();
 
+        // Distribute branches across available servers in round-robin fashion
+        let servers = self.pool.servers_for_model(&reasoning_model).await;
+        let branch_servers: Vec<Option<String>> = if servers.is_empty() {
+            vec![None; branch_count]
+        } else {
+            (0..branch_count)
+                .map(|i| Some(servers[i % servers.len()].clone()))
+                .collect()
+        };
+
         RouteDecision {
             branch_models: vec![reasoning_model; branch_count],
-            branch_servers: vec![None; branch_count],
+            branch_servers,
             branch_prompts,
         }
     }
@@ -333,6 +343,7 @@ Respond with JSON:
         for i in 0..branch_count {
             let pool = Arc::clone(&self.pool);
             let model = route.branch_models[i].clone();
+            let server = route.branch_servers[i].clone();
             let system_prompt = format!("{}\n\n{}", route.branch_prompts[i], system_context);
             let prompt = user_prompt.to_string();
             let temperature = self.config.temperature;
@@ -355,7 +366,14 @@ Respond with JSON:
                     ..Default::default()
                 };
 
-                match pool.chat(&model, messages, Some(options), json_mode).await {
+                // Route to specific server if assigned, otherwise let pool decide
+                let result = if let Some(ref server_name) = server {
+                    pool.chat_on_server(server_name, &model, messages, Some(options), json_mode).await
+                } else {
+                    pool.chat(&model, messages, Some(options), json_mode).await
+                };
+
+                match result {
                     Ok((resp, server)) => {
                         let duration = start.elapsed().as_millis() as u64;
                         let reasoning = resp.thinking().map(String::from);

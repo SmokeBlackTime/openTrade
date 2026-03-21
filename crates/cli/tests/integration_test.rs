@@ -135,9 +135,9 @@ async fn engine_processes_candles_without_error() {
     let config = sample_config();
     let exchange = Arc::new(PaperExchange::new(dec!(100000), dec!(5), dec!(10)));
 
-    let strategies: Vec<Box<dyn ot_strategy::Strategy>> = vec![Box::new(
+    let strategies: Vec<(Box<dyn ot_strategy::Strategy>, Vec<String>)> = vec![(Box::new(
         ot_strategy::trend::TrendFollowing::new(&std::collections::HashMap::new()),
-    )];
+    ), vec![])];
 
     let mut engine = TradingEngine::new(config, strategies, exchange.clone());
 
@@ -155,9 +155,9 @@ async fn engine_generates_trades_on_trending_data() {
     let config = sample_config();
     let exchange = Arc::new(PaperExchange::new(dec!(100000), dec!(5), dec!(10)));
 
-    let strategies: Vec<Box<dyn ot_strategy::Strategy>> = vec![Box::new(
+    let strategies: Vec<(Box<dyn ot_strategy::Strategy>, Vec<String>)> = vec![(Box::new(
         ot_strategy::trend::TrendFollowing::new(&std::collections::HashMap::new()),
-    )];
+    ), vec![])];
 
     let mut engine = TradingEngine::new(config, strategies, exchange.clone());
 
@@ -219,9 +219,9 @@ async fn risk_engine_blocks_excessive_orders() {
     let config = sample_config();
     let exchange = Arc::new(PaperExchange::new(dec!(100000), dec!(5), dec!(10)));
 
-    let strategies: Vec<Box<dyn ot_strategy::Strategy>> = vec![Box::new(
+    let strategies: Vec<(Box<dyn ot_strategy::Strategy>, Vec<String>)> = vec![(Box::new(
         ot_strategy::trend::TrendFollowing::new(&std::collections::HashMap::new()),
-    )];
+    ), vec![])];
 
     let engine = TradingEngine::new(config.clone(), strategies, exchange.clone());
 
@@ -234,7 +234,7 @@ async fn engine_flatten_with_no_positions() {
     let config = sample_config();
     let exchange = Arc::new(PaperExchange::new(dec!(100000), dec!(5), dec!(10)));
 
-    let strategies: Vec<Box<dyn ot_strategy::Strategy>> = vec![];
+    let strategies: Vec<(Box<dyn ot_strategy::Strategy>, Vec<String>)> = vec![];
 
     let mut engine = TradingEngine::new(config, strategies, exchange);
 

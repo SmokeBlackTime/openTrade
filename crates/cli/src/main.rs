@@ -507,52 +507,57 @@ async fn cmd_backtest(
 }
 
 /// Build rule-based strategies only (no neural brain).
-fn build_strategies_without_brain(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::Strategy>> {
+fn build_strategies_without_brain(config: &ot_config::AppConfig) -> Vec<(Box<dyn ot_strategy::Strategy>, Vec<String>)> {
     config
         .strategies
         .iter()
         .filter(|s| s.enabled)
-        .map(|s| -> Box<dyn ot_strategy::Strategy> {
-            match s.strategy_type.as_str() {
-                "trend_following" => Box::new(ot_strategy::trend::TrendFollowing::new(&s.params)),
+        .map(|s| {
+            // Inject config name into params so each strategy gets a unique name
+            let mut params = s.params.clone();
+            params.insert("name".into(), serde_json::json!(s.name));
+
+            let strategy: Box<dyn ot_strategy::Strategy> = match s.strategy_type.as_str() {
+                "trend_following" => Box::new(ot_strategy::trend::TrendFollowing::new(&params)),
                 "mean_reversion" => {
-                    Box::new(ot_strategy::mean_reversion::MeanReversion::new(&s.params))
+                    Box::new(ot_strategy::mean_reversion::MeanReversion::new(&params))
                 }
-                "breakout" => Box::new(ot_strategy::breakout::Breakout::new(&s.params)),
-                "momentum" => Box::new(ot_strategy::momentum::Momentum::new(&s.params)),
+                "breakout" => Box::new(ot_strategy::breakout::Breakout::new(&params)),
+                "momentum" => Box::new(ot_strategy::momentum::Momentum::new(&params)),
                 "funding_rate" => {
-                    Box::new(ot_strategy::funding_rate::FundingRateReversion::new(&s.params))
+                    Box::new(ot_strategy::funding_rate::FundingRateReversion::new(&params))
                 }
                 "imbalance" => {
-                    Box::new(ot_strategy::imbalance::ImbalanceStrategy::new(&s.params))
+                    Box::new(ot_strategy::imbalance::ImbalanceStrategy::new(&params))
                 }
                 "regime_transition" => {
-                    Box::new(ot_strategy::regime_transition::RegimeTransition::new(&s.params))
+                    Box::new(ot_strategy::regime_transition::RegimeTransition::new(&params))
                 }
                 "cross_timeframe" => {
-                    Box::new(ot_strategy::cross_timeframe::CrossTimeframe::new(&s.params))
+                    Box::new(ot_strategy::cross_timeframe::CrossTimeframe::new(&params))
                 }
                 "anti_consensus" => {
-                    Box::new(ot_strategy::anti_consensus::AntiConsensus::new(&s.params))
+                    Box::new(ot_strategy::anti_consensus::AntiConsensus::new(&params))
                 }
                 "risk_signal" => {
-                    Box::new(ot_strategy::risk_signal::RiskSignalStrategy::new(&s.params))
+                    Box::new(ot_strategy::risk_signal::RiskSignalStrategy::new(&params))
                 }
-                _ => Box::new(ot_strategy::trend::TrendFollowing::new(&s.params)),
-            }
+                _ => Box::new(ot_strategy::trend::TrendFollowing::new(&params)),
+            };
+            (strategy, s.symbols.clone())
         })
         .collect()
 }
 
 /// Build all strategies including neural brain (for non-live contexts like paper trading).
-fn build_strategies(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::Strategy>> {
+fn build_strategies(config: &ot_config::AppConfig) -> Vec<(Box<dyn ot_strategy::Strategy>, Vec<String>)> {
     let mut strategies = build_strategies_without_brain(config);
 
     if config.features.enable_neural_brain {
         match build_brain_strategy(config) {
             Ok(brain) => {
                 info!("Neural brain strategy enabled");
-                strategies.push(Box::new(brain));
+                strategies.push((Box::new(brain) as Box<dyn ot_strategy::Strategy>, vec![]));
             }
             Err(e) => {
                 warn!(error = %e, "Failed to initialize neural brain, continuing without it");
@@ -897,7 +902,7 @@ async fn cmd_live(
                 // Initialize: health-checks all servers and warms up models
                 brain.initialize().await;
                 info!("Neural brain strategy enabled and initialized");
-                strategies.push(Box::new(brain));
+                strategies.push((Box::new(brain) as Box<dyn ot_strategy::Strategy>, vec![]));
             }
             Err(e) => {
                 warn!(error = %e, "Failed to initialize neural brain, continuing without it");
