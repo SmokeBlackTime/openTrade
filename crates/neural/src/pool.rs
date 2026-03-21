@@ -10,7 +10,7 @@ use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// Health status of a single server.
 #[derive(Debug, Clone)]
@@ -49,6 +49,13 @@ impl OllamaPool {
             .iter()
             .filter(|c| c.enabled)
             .map(|config| {
+                info!(
+                    server = %config.name,
+                    url = %config.base_url,
+                    models = ?config.models,
+                    weight = config.weight,
+                    "Registering Ollama server in pool"
+                );
                 let client = OllamaClient::new(&config.base_url, timeout_secs);
                 let health = ServerHealth {
                     name: config.name.clone(),
@@ -80,6 +87,11 @@ impl OllamaPool {
 
         for (i, entry) in entries.iter_mut().enumerate() {
             let start = std::time::Instant::now();
+            info!(
+                server = %entry.config.name,
+                url = %entry.config.base_url,
+                "Running health check"
+            );
             let healthy = entry.client.health_check().await;
             let latency = start.elapsed().as_millis() as u64;
 
@@ -184,9 +196,12 @@ impl OllamaPool {
             .unwrap_or(candidates[0]);
 
         let entry = &entries[best_idx];
-        debug!(
+        info!(
             server = %entry.config.name,
+            url = %entry.config.base_url,
             model = model,
+            latency_ms = entry.health.latency_ms,
+            candidates = candidates.len(),
             "Routing chat request"
         );
 
@@ -207,13 +222,29 @@ impl OllamaPool {
         json_mode: bool,
     ) -> Result<(ChatResponse, String), OllamaError> {
         let entries = self.entries.read().await;
+        // Try healthy first, fall back to any matching server
         let entry = entries
             .iter()
             .find(|e| e.config.name == server_name && e.health.is_healthy)
-            .ok_or(OllamaError::NoServersAvailable)?;
+            .or_else(|| {
+                warn!(
+                    server = server_name,
+                    "Server not healthy, attempting anyway"
+                );
+                entries.iter().find(|e| e.config.name == server_name)
+            })
+            .ok_or_else(|| {
+                warn!(
+                    server = server_name,
+                    registered = entries.iter().map(|e| e.config.name.as_str()).collect::<Vec<_>>().join(", "),
+                    "Server not found in pool"
+                );
+                OllamaError::NoServersAvailable
+            })?;
 
-        debug!(
+        info!(
             server = %entry.config.name,
+            url = %entry.config.base_url,
             model = model,
             "Routing chat request to specific server"
         );
