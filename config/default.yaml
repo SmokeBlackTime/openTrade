@@ -7,7 +7,7 @@
 # ALL features enabled. ALL strategies active. Neural brain on aggressive.
 # This is the maximum intelligence configuration.
 
-mode: paper
+mode: live
 
 exchange:
   name: binance
