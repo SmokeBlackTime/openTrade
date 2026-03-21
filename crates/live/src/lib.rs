@@ -266,6 +266,15 @@ impl TradingEngine {
             None,
         );
 
+        let notional = size * candle.close;
+        info!(
+            qty = %size,
+            notional = %notional,
+            price = %candle.close,
+            equity = %self.portfolio.equity(),
+            "Computed position size"
+        );
+
         if size <= dec!(0) {
             info!("Position size is zero, skipping");
             return Ok(());
