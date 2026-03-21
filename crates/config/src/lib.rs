@@ -75,6 +75,11 @@ pub struct ExchangeConfig {
     /// If not set, defaults based on use_testnet and use_futures.
     #[serde(default)]
     pub base_url: Option<String>,
+    /// Optional HTTP/SOCKS5 proxy URL for exchange API requests.
+    /// Supports http://, https://, socks5://, socks5h://
+    /// Example: "socks5://127.0.0.1:1080" or "http://proxy:8080"
+    #[serde(default)]
+    pub proxy_url: Option<String>,
     /// API key loaded from env var name (not the key itself).
     pub api_key_env: String,
     /// API secret loaded from env var name (not the secret itself).

@@ -22,7 +22,7 @@ pub struct BinanceClient {
 
 impl BinanceClient {
     pub fn new(api_key: String, api_secret: String, use_testnet: bool) -> Self {
-        Self::with_base_url(api_key, api_secret, use_testnet, None, false)
+        Self::with_base_url(api_key, api_secret, use_testnet, None, false, None)
     }
 
     pub fn with_base_url(
@@ -31,6 +31,7 @@ impl BinanceClient {
         use_testnet: bool,
         custom_base_url: Option<String>,
         is_futures: bool,
+        proxy_url: Option<String>,
     ) -> Self {
         let base_url = custom_base_url.unwrap_or_else(|| {
             if is_futures {
@@ -46,11 +47,18 @@ impl BinanceClient {
             }
         });
 
+        let mut builder = Client::builder()
+            .timeout(std::time::Duration::from_secs(30));
+
+        if let Some(ref proxy) = proxy_url {
+            let proxy = reqwest::Proxy::all(proxy)
+                .unwrap_or_else(|e| panic!("Invalid proxy URL '{}': {}", proxy, e));
+            builder = builder.proxy(proxy);
+            tracing::info!(proxy = %proxy_url.as_deref().unwrap_or(""), "HTTP client using proxy");
+        }
+
         Self {
-            http: Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to build HTTP client"),
+            http: builder.build().expect("Failed to build HTTP client"),
             api_key,
             api_secret,
             base_url,
@@ -60,7 +68,7 @@ impl BinanceClient {
     }
 
     pub fn futures(api_key: String, api_secret: String, use_testnet: bool) -> Self {
-        Self::with_base_url(api_key, api_secret, use_testnet, None, true)
+        Self::with_base_url(api_key, api_secret, use_testnet, None, true, None)
     }
 
     /// Returns true if this client is configured for futures trading.
