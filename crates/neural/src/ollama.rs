@@ -225,7 +225,7 @@ impl OllamaClient {
             } else {
                 None
             },
-            keep_alive: Some("-1s".into()),
+            keep_alive: Some("24h".into()),
         };
 
         debug!(model = model, url = %url, "Sending chat request to Ollama");

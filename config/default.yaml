@@ -372,7 +372,7 @@ neural_brain:
     - name: local-ollama
       base_url: "http://localhost:11434"
       weight: 1
-      models: ["qwen-trading:latest"]
+      models: ["qwen-ot:latest"]
       enabled: true
     # Add your second machine here (change IP to match):
     - name: gpu-server-2
@@ -380,9 +380,9 @@ neural_brain:
       weight: 1
       models: ["qwen-ot:latest"]
       enabled: true
-  default_model: "qwen-trading:latest"
-  classify_model: "qwen-trading:latest"
-  reasoning_model: "qwen-trading:latest"
+  default_model: "qwen-ot:latest"
+  classify_model: "qwen-ot:latest"
+  reasoning_model: "qwen-ot:latest"
   temperature: 0.3
   timeout_secs: 60
   collective_thinking: true
