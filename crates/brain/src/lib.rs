@@ -206,8 +206,18 @@ impl TradingBrain {
         self.stats.total_decisions += 1;
 
         let should_analyze = self.bar_count % self.config.analysis_interval == 0;
+        let healthy = self.pool.healthy_count().await;
 
-        if should_analyze && self.pool.healthy_count().await > 0 {
+        info!(
+            bar_count = self.bar_count,
+            should_analyze = should_analyze,
+            healthy_servers = healthy,
+            symbol = %candle.symbol,
+            "Brain on_bar"
+        );
+
+        if should_analyze && healthy > 0 {
+            info!("Starting deep analysis with Ollama");
             self.deep_analysis(candle, features, current_regime).await
         } else {
             self.quick_decision(candle, features, current_regime)

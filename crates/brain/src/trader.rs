@@ -87,6 +87,13 @@ impl Strategy for BrainStrategy {
     ) -> Option<Signal> {
         self.bars_since_signal += 1;
 
+        debug!(
+            bars_since_signal = self.bars_since_signal,
+            cooldown = self.cooldown,
+            symbol = %candle.symbol,
+            "Brain strategy on_bar called"
+        );
+
         if self.bars_since_signal < self.cooldown {
             return None;
         }
