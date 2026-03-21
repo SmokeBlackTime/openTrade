@@ -310,10 +310,15 @@ impl BinanceClient {
             Self::timestamp_ms()
         );
 
-        if let Some(price) = req.price {
-            let price = truncate_dp(price, price_precision(sym_str));
-            query.push_str(&format!("&price={}", price));
-            if req.time_in_force.is_some() || req.order_type == OrderType::Limit {
+        // Only send price for order types that require it (not MARKET)
+        let needs_price = matches!(
+            req.order_type,
+            OrderType::Limit | OrderType::StopLossLimit | OrderType::TakeProfitLimit | OrderType::PostOnly
+        );
+        if needs_price {
+            if let Some(price) = req.price {
+                let price = truncate_dp(price, price_precision(sym_str));
+                query.push_str(&format!("&price={}", price));
                 let tif = match req.time_in_force {
                     Some(TimeInForce::Gtc) | None => "GTC",
                     Some(TimeInForce::Ioc) => "IOC",
