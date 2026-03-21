@@ -82,6 +82,10 @@ struct ChatRequest {
     options: Option<OllamaOptions>,
     #[serde(skip_serializing_if = "Option::is_none")]
     format: Option<String>,
+    /// How long to keep the model loaded after this request.
+    /// "-1" means keep loaded indefinitely until explicitly unloaded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keep_alive: Option<String>,
 }
 
 /// Response from /api/chat (non-streaming).
@@ -221,6 +225,7 @@ impl OllamaClient {
             } else {
                 None
             },
+            keep_alive: Some("-1".into()),
         };
 
         debug!(model = model, url = %url, "Sending chat request to Ollama");
