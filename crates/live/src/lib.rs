@@ -177,6 +177,20 @@ impl TradingEngine {
         }
     }
 
+    /// Pre-fill candle buffer with historical data so the engine can trade immediately.
+    pub fn prefill_buffer(&mut self, symbol: &str, timeframe: &str, candles: Vec<Candle>) {
+        let key = format!("{}:{}", symbol, timeframe);
+        let buffer = self
+            .candle_buffers
+            .entry(key.clone())
+            .or_insert_with(|| CandleBuffer::new(500));
+        let count = candles.len();
+        for candle in candles {
+            buffer.push(candle);
+        }
+        info!(key = %key, candles = count, buffer_size = buffer.len(), "Buffer pre-filled with historical candles");
+    }
+
     /// Process a new completed candle.
     pub async fn on_candle(&mut self, candle: Candle) -> Result<(), OtError> {
         let key = format!("{}:{}", candle.symbol, candle.timeframe);

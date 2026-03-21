@@ -632,6 +632,62 @@ async fn cmd_paper(config: &ot_config::AppConfig, run_id: Option<String>) -> Res
 
     let num_strategies = config.strategies.iter().filter(|s| s.enabled).count();
     println!("Engine initialized with {} strategies", num_strategies);
+
+    // Pre-fill candle buffers with historical data so the brain can trade immediately
+    {
+        let warmup_client = ot_exchange_binance::BinanceClient::with_base_url(
+            String::new(),
+            String::new(),
+            config.exchange.use_testnet,
+            config.exchange.base_url.clone(),
+            config.exchange.use_futures,
+            config.exchange.proxy_url.clone(),
+        );
+        let hist = ot_exchange_binance::rest::BinanceHistoricalProvider::new(warmup_client);
+        use ot_market_data::HistoricalDataProvider;
+
+        for sym_config in &config.symbols {
+            if !sym_config.enabled {
+                continue;
+            }
+            for tf in &sym_config.timeframes {
+                let end = chrono::Utc::now();
+                let duration = chrono::Duration::seconds((tf.as_secs() * 100) as i64);
+                let start = end - duration;
+                info!(
+                    symbol = %sym_config.symbol,
+                    timeframe = %tf,
+                    "Pre-filling buffer with historical candles"
+                );
+                match hist
+                    .fetch_candles(
+                        &sym_config.symbol,
+                        sym_config.market_type,
+                        *tf,
+                        start,
+                        end,
+                    )
+                    .await
+                {
+                    Ok(candles) => {
+                        engine.prefill_buffer(
+                            sym_config.symbol.as_str(),
+                            tf.as_binance_str(),
+                            candles,
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            error = %e,
+                            symbol = %sym_config.symbol,
+                            "Failed to pre-fill buffer, will warm up from live data"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     println!("Subscribing to market data...\n");
 
     // Subscribe to WebSocket candle streams for each configured symbol/timeframe
@@ -805,6 +861,62 @@ async fn cmd_live(
     // Restore state from previous session
     if let Err(e) = engine.restore_state() {
         warn!(error = %e, "Failed to restore state, starting fresh");
+    }
+
+    // Pre-fill candle buffers with historical data so the brain can trade immediately
+    {
+        let warmup_client = ot_exchange_binance::BinanceClient::with_base_url(
+            config.resolve_api_key()?,
+            config.resolve_api_secret()?,
+            config.exchange.use_testnet,
+            config.exchange.base_url.clone(),
+            config.exchange.use_futures,
+            config.exchange.proxy_url.clone(),
+        );
+        let hist = ot_exchange_binance::rest::BinanceHistoricalProvider::new(warmup_client);
+        use ot_market_data::HistoricalDataProvider;
+
+        for sym_config in &config.symbols {
+            if !sym_config.enabled {
+                continue;
+            }
+            for tf in &sym_config.timeframes {
+                let end = chrono::Utc::now();
+                // Fetch 100 candles worth of history
+                let duration = chrono::Duration::seconds((tf.as_secs() * 100) as i64);
+                let start = end - duration;
+                info!(
+                    symbol = %sym_config.symbol,
+                    timeframe = %tf,
+                    "Pre-filling buffer with historical candles"
+                );
+                match hist
+                    .fetch_candles(
+                        &sym_config.symbol,
+                        sym_config.market_type,
+                        *tf,
+                        start,
+                        end,
+                    )
+                    .await
+                {
+                    Ok(candles) => {
+                        engine.prefill_buffer(
+                            sym_config.symbol.as_str(),
+                            tf.as_binance_str(),
+                            candles,
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            error = %e,
+                            symbol = %sym_config.symbol,
+                            "Failed to pre-fill buffer, will warm up from live data"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     println!("Live trading started. Run ID: {}", run);
