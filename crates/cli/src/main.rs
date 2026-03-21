@@ -506,8 +506,9 @@ async fn cmd_backtest(
     Ok(())
 }
 
-fn build_strategies(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::Strategy>> {
-    let mut strategies: Vec<Box<dyn ot_strategy::Strategy>> = config
+/// Build rule-based strategies only (no neural brain).
+fn build_strategies_without_brain(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::Strategy>> {
+    config
         .strategies
         .iter()
         .filter(|s| s.enabled)
@@ -519,7 +520,6 @@ fn build_strategies(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::S
                 }
                 "breakout" => Box::new(ot_strategy::breakout::Breakout::new(&s.params)),
                 "momentum" => Box::new(ot_strategy::momentum::Momentum::new(&s.params)),
-                // Advanced strategies
                 "funding_rate" => {
                     Box::new(ot_strategy::funding_rate::FundingRateReversion::new(&s.params))
                 }
@@ -541,14 +541,18 @@ fn build_strategies(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::S
                 _ => Box::new(ot_strategy::trend::TrendFollowing::new(&s.params)),
             }
         })
-        .collect();
+        .collect()
+}
 
-    // Add the AI neural brain strategy if enabled
+/// Build all strategies including neural brain (for non-live contexts like paper trading).
+fn build_strategies(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::Strategy>> {
+    let mut strategies = build_strategies_without_brain(config);
+
     if config.features.enable_neural_brain {
         match build_brain_strategy(config) {
             Ok(brain) => {
                 info!("Neural brain strategy enabled");
-                strategies.push(brain);
+                strategies.push(Box::new(brain));
             }
             Err(e) => {
                 warn!(error = %e, "Failed to initialize neural brain, continuing without it");
@@ -561,7 +565,7 @@ fn build_strategies(config: &ot_config::AppConfig) -> Vec<Box<dyn ot_strategy::S
 
 fn build_brain_strategy(
     config: &ot_config::AppConfig,
-) -> Result<Box<dyn ot_strategy::Strategy>, anyhow::Error> {
+) -> Result<ot_brain::trader::BrainStrategy, anyhow::Error> {
     let neural_config = config.neural_brain.clone().unwrap_or_default();
 
     let ollama_servers: Vec<ot_neural::OllamaServerConfig> = neural_config
@@ -606,7 +610,7 @@ fn build_brain_strategy(
     };
 
     let brain = ot_brain::trader::BrainStrategy::new(brain_config)?;
-    Ok(Box::new(brain))
+    Ok(brain)
 }
 
 async fn cmd_paper(config: &ot_config::AppConfig, run_id: Option<String>) -> Result<()> {
@@ -883,37 +887,20 @@ async fn cmd_live(
         ),
     ));
 
-    let strategies = build_strategies(config);
+    let mut strategies = build_strategies_without_brain(config);
 
-    // Initialize neural brain (warmup models on all Ollama servers)
+    // Build and initialize the neural brain strategy separately so we can
+    // call async initialize() before boxing into the strategy list.
     if config.features.enable_neural_brain {
-        if let Some(neural_config) = &config.neural_brain {
-            let ollama_servers: Vec<ot_neural::OllamaServerConfig> = neural_config
-                .ollama_servers
-                .iter()
-                .map(|s| ot_neural::OllamaServerConfig {
-                    name: s.name.clone(),
-                    base_url: s.base_url.clone(),
-                    weight: s.weight,
-                    models: s.models.clone(),
-                    enabled: s.enabled,
-                })
-                .collect();
-            let pool = ot_neural::pool::OllamaPool::new(&ollama_servers, neural_config.timeout_secs);
-            info!("Warming up Ollama models on all servers...");
-            pool.health_check_all().await;
-            for server in &neural_config.ollama_servers {
-                if !server.enabled {
-                    continue;
-                }
-                for model in &server.models {
-                    info!(model = %model, server = %server.name, "Warming up model...");
-                    let messages = vec![ot_neural::ollama::ChatMessage::user("ping".to_string())];
-                    match pool.chat(model, messages, None, false).await {
-                        Ok((_, srv)) => info!(model = %model, server = %srv, "Model warmed up OK"),
-                        Err(e) => warn!(model = %model, server = %server.name, error = %e, "Model warmup FAILED"),
-                    }
-                }
+        match build_brain_strategy(config) {
+            Ok(brain) => {
+                // Initialize: health-checks all servers and warms up models
+                brain.initialize().await;
+                info!("Neural brain strategy enabled and initialized");
+                strategies.push(Box::new(brain));
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to initialize neural brain, continuing without it");
             }
         }
     }
