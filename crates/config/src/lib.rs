@@ -387,22 +387,26 @@ impl AppConfig {
 
     /// Resolve API key from environment variable.
     pub fn resolve_api_key(&self) -> Result<String, ConfigError> {
-        std::env::var(&self.exchange.api_key_env).map_err(|_| {
-            ConfigError::ReadError(format!(
-                "Environment variable '{}' not set",
-                self.exchange.api_key_env
-            ))
-        })
+        std::env::var(&self.exchange.api_key_env)
+            .map(|s| s.trim().to_string())
+            .map_err(|_| {
+                ConfigError::ReadError(format!(
+                    "Environment variable '{}' not set",
+                    self.exchange.api_key_env
+                ))
+            })
     }
 
     /// Resolve API secret from environment variable.
     pub fn resolve_api_secret(&self) -> Result<String, ConfigError> {
-        std::env::var(&self.exchange.api_secret_env).map_err(|_| {
-            ConfigError::ReadError(format!(
-                "Environment variable '{}' not set",
-                self.exchange.api_secret_env
-            ))
-        })
+        std::env::var(&self.exchange.api_secret_env)
+            .map(|s| s.trim().to_string())
+            .map_err(|_| {
+                ConfigError::ReadError(format!(
+                    "Environment variable '{}' not set",
+                    self.exchange.api_secret_env
+                ))
+            })
     }
 }
 
