@@ -310,12 +310,12 @@ risk:
   max_orders_per_minute: 60
 
 portfolio:
-  initial_capital: "100000"
-  risk_per_trade_pct: "1.5"
+  initial_capital: "18"
+  risk_per_trade_pct: "50"
   target_volatility_pct: "25"
-  kelly_fraction: "0.5"
+  kelly_fraction: "1.0"
   max_portfolio_leverage: "5"
-  concentration_limit_pct: "40"
+  concentration_limit_pct: "90"
   correlation_lookback_bars: 200
   rebalance_threshold_pct: "3"
 
