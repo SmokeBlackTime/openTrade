@@ -299,6 +299,12 @@ impl BinanceClient {
         let sym_str = req.symbol.as_str();
         let quantity = truncate_dp(req.quantity, qty_precision(sym_str));
 
+        if quantity <= Decimal::ZERO {
+            return Err(OtError::Exchange(ExchangeError::OrderRejected(
+                format!("Quantity truncated to zero for {} (raw: {})", req.symbol, req.quantity),
+            )));
+        }
+
         let mut query = format!(
             "symbol={}&side={}&type={}&quantity={}&newClientOrderId={}&recvWindow={}&timestamp={}",
             req.symbol,

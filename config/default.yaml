@@ -328,7 +328,7 @@ execution:
   reconciliation_interval_secs: 30
   smart_order_splitting: true
   max_split_orders: 10
-  min_order_size_usd: "10"
+  min_order_size_usd: "20"
 
 backtest:
   start_date: "2024-01-01"
@@ -378,7 +378,7 @@ neural_brain:
     - name: gpu-server-2
       base_url: "http://192.168.1.131:11434"
       weight: 1
-      models: ["qwen-ot:latest"]
+      models: ["qwen-trading:latest"]
       enabled: true
   default_model: "qwen-trading:latest"
   classify_model: "qwen-trading:latest"

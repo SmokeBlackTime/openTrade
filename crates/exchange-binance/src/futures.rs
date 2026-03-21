@@ -335,6 +335,12 @@ impl BinanceFuturesClient {
     ) -> Result<BinanceOrderResponse, OtError> {
         let quantity = crate::client::truncate_dp(quantity, crate::client::qty_precision(symbol));
 
+        if quantity <= Decimal::ZERO {
+            return Err(OtError::Exchange(ExchangeError::OrderRejected(
+                format!("Quantity truncated to zero for {} (raw qty: {})", symbol, quantity),
+            )));
+        }
+
         let mut query = format!(
             "symbol={}&side={}&type={}&quantity={}&recvWindow={}&timestamp={}",
             symbol, side, order_type, quantity, self.recv_window, Self::timestamp_ms()
