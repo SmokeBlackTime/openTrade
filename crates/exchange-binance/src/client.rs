@@ -479,6 +479,7 @@ impl BinanceClient {
     /// Start a user data stream (returns listen key).
     pub async fn start_user_data_stream(&self) -> Result<String, OtError> {
         let url = format!("{}{}", self.base_url, self.user_data_stream_path());
+        debug!(url = %url, is_futures = self.is_futures, "Starting user data stream");
 
         let resp = self
             .http
