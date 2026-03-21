@@ -86,7 +86,6 @@ pub struct TradingBrain {
     config: BrainConfig,
     pool: Arc<OllamaPool>,
     proxy: NeuralProxy,
-    #[allow(dead_code)]
     pipeline: NeuralPipeline,
     collective: CollectiveThinking,
     memory: NeuralMemory,
@@ -297,10 +296,37 @@ impl TradingBrain {
             memory_context,
         );
 
-        // Run collective deliberation
+        // Run pipeline pre-analysis for richer context
+        let pipeline_context = match self
+            .pipeline
+            .process(&market_context, &features_json)
+            .await
+        {
+            Ok(result) => {
+                info!(
+                    agreement = result.agreement,
+                    duration_ms = result.total_duration_ms,
+                    "Pipeline pre-analysis complete"
+                );
+                result.reasoning_chain
+            }
+            Err(e) => {
+                warn!(error = %e, "Pipeline pre-analysis failed, proceeding with collective only");
+                String::new()
+            }
+        };
+
+        // Enrich context with pipeline analysis
+        let enriched_context = if pipeline_context.is_empty() {
+            market_context.clone()
+        } else {
+            format!("{}\n\nPipeline analysis:\n{}", market_context, pipeline_context)
+        };
+
+        // Run collective deliberation with enriched context
         let decision = self
             .collective
-            .deliberate(&market_context, &features_json)
+            .deliberate(&enriched_context, &features_json)
             .await;
 
         let duration = start.elapsed().as_millis() as u64;

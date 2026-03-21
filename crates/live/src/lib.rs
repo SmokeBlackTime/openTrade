@@ -32,7 +32,6 @@ use tracing::{error, info, warn};
 
 /// The core trading engine.
 pub struct TradingEngine {
-    #[allow(dead_code)]
     config: AppConfig,
     strategies: Vec<Box<dyn Strategy>>,
     risk_engine: RiskEngine,

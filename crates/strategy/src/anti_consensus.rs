@@ -22,10 +22,8 @@ use crate::Strategy;
 /// Tracks signals from other strategies to detect consensus.
 #[derive(Debug, Clone)]
 struct SignalRecord {
-    #[allow(dead_code)]
     strategy: String,
     direction: SignalDirection,
-    #[allow(dead_code)]
     confidence: Decimal,
     bar_index: u64,
 }
@@ -110,6 +108,7 @@ impl AntiConsensus {
     }
 
     /// Check if there's consensus among recent signals.
+    /// Uses confidence-weighted voting: high-confidence signals count more.
     fn detect_consensus(&self) -> Option<(SignalDirection, usize)> {
         let current_bar_signals: Vec<&SignalRecord> = self
             .recent_signals
@@ -121,20 +120,42 @@ impl AntiConsensus {
             return None;
         }
 
-        let long_count = current_bar_signals
-            .iter()
-            .filter(|s| s.direction == SignalDirection::Long)
-            .count();
-        let short_count = current_bar_signals
-            .iter()
-            .filter(|s| s.direction == SignalDirection::Short)
-            .count();
+        // Use confidence-weighted voting
+        let mut long_weight = dec!(0);
+        let mut short_weight = dec!(0);
+        let mut long_count = 0usize;
+        let mut short_count = 0usize;
+
+        for s in &current_bar_signals {
+            match s.direction {
+                SignalDirection::Long => {
+                    long_weight += s.confidence;
+                    long_count += 1;
+                }
+                SignalDirection::Short => {
+                    short_weight += s.confidence;
+                    short_count += 1;
+                }
+                _ => {}
+            }
+        }
 
         let total = current_bar_signals.len();
+        let strategies: Vec<&str> = current_bar_signals.iter().map(|s| s.strategy.as_str()).collect();
 
         if long_count == total {
+            tracing::info!(
+                strategies = ?strategies,
+                avg_confidence = %long_weight / Decimal::from(total),
+                "Anti-consensus detected LONG consensus"
+            );
             Some((SignalDirection::Long, total))
         } else if short_count == total {
+            tracing::info!(
+                strategies = ?strategies,
+                avg_confidence = %short_weight / Decimal::from(total),
+                "Anti-consensus detected SHORT consensus"
+            );
             Some((SignalDirection::Short, total))
         } else {
             None

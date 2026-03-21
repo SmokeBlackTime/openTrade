@@ -14,7 +14,6 @@ use crate::Strategy;
 /// Entry long: price touches lower BB AND RSI < oversold threshold
 /// Entry short: price touches upper BB AND RSI > overbought threshold
 /// Exit: price returns to middle BB or opposite signal
-#[allow(dead_code)]
 pub struct MeanReversion {
     name: String,
     rsi_overbought: Decimal,
@@ -125,8 +124,12 @@ impl Strategy for MeanReversion {
             return None;
         }
 
+        // Use bb_entry_pct as proximity threshold to the band
+        let bb_range = bb_upper - bb_lower;
+        let entry_margin = bb_range * (dec!(1) - self.bb_entry_pct);
+
         // Long entry: price near lower BB + RSI oversold
-        if candle.close <= bb_lower && rsi < self.rsi_oversold {
+        if candle.close <= bb_lower + entry_margin && rsi < self.rsi_oversold {
             self.bars_since_signal = 0;
             let confidence = dec!(0.5) + (self.rsi_oversold - rsi) / dec!(100) * dec!(0.3);
             return Some(Signal {
@@ -158,7 +161,7 @@ impl Strategy for MeanReversion {
         }
 
         // Short entry: price near upper BB + RSI overbought
-        if self.allow_short && candle.close >= bb_upper && rsi > self.rsi_overbought {
+        if self.allow_short && candle.close >= bb_upper - entry_margin && rsi > self.rsi_overbought {
             self.bars_since_signal = 0;
             let confidence = dec!(0.5) + (rsi - self.rsi_overbought) / dec!(100) * dec!(0.3);
             return Some(Signal {

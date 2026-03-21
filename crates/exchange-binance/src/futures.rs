@@ -36,18 +36,15 @@ pub struct FuturesPosition {
     pub notional: Decimal,
 }
 
-/// Funding rate response.
-#[allow(dead_code)]
+/// Funding rate response from premiumIndex endpoint.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct BinanceFundingRate {
-    pub symbol: String,
-    pub funding_rate: String,
-    pub funding_time: i64,
+struct BinancePremiumIndex {
+    pub last_funding_rate: String,
+    pub next_funding_time: i64,
 }
 
 /// Futures account info.
-#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FuturesAccountInfo {
@@ -74,7 +71,6 @@ struct FuturesPositionInfo {
 }
 
 /// Leverage response.
-#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LeverageResponse {
@@ -83,11 +79,9 @@ struct LeverageResponse {
     pub symbol: String,
 }
 
-/// Margin type response.
-#[allow(dead_code)]
+/// Binance error response (used for margin type change errors, etc).
 #[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MarginTypeResponse {
+struct BinanceErrorResponse {
     pub code: i32,
     pub msg: String,
 }
@@ -145,7 +139,12 @@ impl BinanceFuturesClient {
             .await
             .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))?;
 
-        info!(symbol = symbol, leverage = result.leverage, "Leverage set");
+        info!(
+            symbol = %result.symbol,
+            leverage = result.leverage,
+            max_notional = %result.max_notional_value,
+            "Leverage set"
+        );
         Ok(result.leverage)
     }
 
@@ -170,10 +169,16 @@ impl BinanceFuturesClient {
 
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            // -4046 means "No need to change margin type" which is fine
-            if body.contains("-4046") {
-                debug!(symbol = symbol, margin_type = margin_type, "Margin type already set");
-                return Ok(());
+            // Parse the error response for structured handling
+            if let Ok(err) = serde_json::from_str::<BinanceErrorResponse>(&body) {
+                // -4046 means "No need to change margin type" which is fine
+                if err.code == -4046 {
+                    debug!(symbol = symbol, margin_type = margin_type, "Margin type already set");
+                    return Ok(());
+                }
+                return Err(OtError::Exchange(ExchangeError::Http(
+                    format!("Binance error {}: {}", err.code, err.msg),
+                )));
             }
             return Err(OtError::Exchange(ExchangeError::Http(body)));
         }
@@ -201,25 +206,18 @@ impl BinanceFuturesClient {
             return Err(OtError::Exchange(ExchangeError::Http(body)));
         }
 
-        let data: serde_json::Value = resp
+        let data: BinancePremiumIndex = resp
             .json()
             .await
             .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))?;
 
-        let rate = data["lastFundingRate"]
-            .as_str()
-            .and_then(|s| Decimal::from_str(s).ok())
-            .unwrap_or(Decimal::ZERO);
-
-        let next_time = data["nextFundingTime"]
-            .as_i64()
-            .unwrap_or(0);
+        let rate = Decimal::from_str(&data.last_funding_rate).unwrap_or(Decimal::ZERO);
 
         Ok(FundingRate {
             symbol: Symbol::new(symbol),
             timestamp: Utc::now(),
             rate,
-            next_funding_time: ot_common::time_utils::ms_to_datetime(next_time),
+            next_funding_time: ot_common::time_utils::ms_to_datetime(data.next_funding_time),
         })
     }
 
@@ -254,6 +252,14 @@ impl BinanceFuturesClient {
             .map_err(|e| OtError::Exchange(ExchangeError::Parse(e.to_string())))?;
 
         let parse = |s: &str| Decimal::from_str(s).unwrap_or(Decimal::ZERO);
+
+        info!(
+            wallet_balance = %account.total_wallet_balance,
+            unrealized_pnl = %account.total_unrealized_profit,
+            margin_balance = %account.total_margin_balance,
+            available = %account.available_balance,
+            "Futures account snapshot"
+        );
 
         let positions: Vec<FuturesPosition> = account
             .positions
