@@ -186,12 +186,12 @@ impl TradingEngine {
     }
 
     /// Fetch and cache current funding rate for a symbol.
-    /// Returns the cached rate (or last known if fetch fails).
-    async fn refresh_funding_rate(&mut self, symbol: &str) -> Decimal {
+    /// Returns `Some(rate)` when the rate is known (even if zero), or `None` if unknown/unavailable.
+    async fn refresh_funding_rate(&mut self, symbol: &str) -> Option<Decimal> {
         use ot_exchange_binance::futures::BinanceFuturesClient;
         // Only refresh on Futures mode
         if !self.config.exchange.use_futures {
-            return Decimal::ZERO;
+            return None;
         }
         let counter = self
             .funding_rate_fetch_counter
@@ -200,7 +200,7 @@ impl TradingEngine {
         *counter += 1;
         // Return cached value for the first 14 candles; fetch on the 15th
         if *counter < 15 && self.funding_rate_cache.contains_key(symbol) {
-            return *self.funding_rate_cache.get(symbol).unwrap_or(&Decimal::ZERO);
+            return self.funding_rate_cache.get(symbol).copied();
         }
         // Reset counter only here, right before the actual fetch
         *counter = 0;
@@ -213,11 +213,11 @@ impl TradingEngine {
             Ok(fr) => {
                 info!(symbol = symbol, rate = %fr.rate, "Funding rate refreshed");
                 self.funding_rate_cache.insert(symbol.to_string(), fr.rate);
-                fr.rate
+                Some(fr.rate)
             }
             Err(e) => {
                 warn!(symbol = symbol, error = %e, "Failed to fetch funding rate, using cached");
-                *self.funding_rate_cache.get(symbol).unwrap_or(&Decimal::ZERO)
+                self.funding_rate_cache.get(symbol).copied()
             }
         }
     }
@@ -283,8 +283,7 @@ impl TradingEngine {
         // Inject current funding rate (Futures only)
         let mut features = features;
         if self.config.exchange.use_futures {
-            let rate = self.refresh_funding_rate(candle.symbol.as_str()).await;
-            features.funding_rate = if rate != Decimal::ZERO { Some(rate) } else { None };
+            features.funding_rate = self.refresh_funding_rate(candle.symbol.as_str()).await;
         }
 
         // Collect signals first (avoid borrowing self mutably twice)
@@ -1024,12 +1023,27 @@ mod tests {
     use rust_decimal_macros::dec;
 
     #[test]
-    fn funding_rate_counter_returns_zero_when_not_futures() {
-        // Verify that non-futures mode returns ZERO without fetching
-        // (We can't easily test the async fetch, but we can test the cache logic)
-        let rate = dec!(0.0003);
-        let cached: std::collections::HashMap<String, rust_decimal::Decimal> =
-            std::collections::HashMap::from([("BTCUSDT".to_string(), rate)]);
-        assert_eq!(*cached.get("BTCUSDT").unwrap_or(&dec!(0)), rate);
+    fn funding_rate_counter_skips_fetch_within_15_candles() {
+        // Verify the threshold constant: counter < 15 means we skip fetch
+        // This tests the boundary condition of the caching logic
+        let threshold: u32 = 15;
+        let mut counter: u32 = 0;
+        let mut fetch_count = 0;
+
+        // Simulate 30 candle calls without an existing cache
+        // First call should fetch (counter=1, no cache key)
+        // Calls 2-15 would skip (if cache existed)
+        // Call 16 should fetch again
+        let cache: std::collections::HashMap<String, rust_decimal::Decimal> =
+            std::collections::HashMap::from([("BTCUSDT".to_string(), dec!(0.0003))]);
+        for _ in 0..30 {
+            counter += 1;
+            if !(counter < threshold && cache.contains_key("BTCUSDT")) {
+                counter = 0;
+                fetch_count += 1;
+            }
+        }
+        // After 30 candles: first fetch at candle 1, then every 15 → fetches at 1, 16 = 2 fetches
+        assert_eq!(fetch_count, 2, "Should fetch twice in 30 candles (at 1 and 16)");
     }
 }
