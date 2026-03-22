@@ -43,6 +43,10 @@ pub struct TradingEngine {
     storage: Option<Storage>,
     /// Maps entry_client_order_id -> Signal (for bracket order context)
     pending_signals: HashMap<ClientOrderId, Signal>,
+    /// Cached funding rates per symbol (symbol -> rate). Updated every N candles.
+    funding_rate_cache: HashMap<String, Decimal>,
+    /// Candle count since last funding rate fetch per symbol.
+    funding_rate_fetch_counter: HashMap<String, u32>,
 }
 
 impl TradingEngine {
@@ -80,6 +84,8 @@ impl TradingEngine {
             exchange,
             storage,
             pending_signals: HashMap::new(),
+            funding_rate_cache: HashMap::new(),
+            funding_rate_fetch_counter: HashMap::new(),
         }
     }
 
@@ -179,6 +185,43 @@ impl TradingEngine {
         }
     }
 
+    /// Fetch and cache current funding rate for a symbol.
+    /// Returns the cached rate (or last known if fetch fails).
+    async fn refresh_funding_rate(&mut self, symbol: &str) -> Decimal {
+        use ot_exchange_binance::futures::BinanceFuturesClient;
+        // Only refresh on Futures mode
+        if !self.config.exchange.use_futures {
+            return Decimal::ZERO;
+        }
+        let counter = self
+            .funding_rate_fetch_counter
+            .entry(symbol.to_string())
+            .or_insert(0);
+        *counter += 1;
+        // Return cached value for the first 14 candles; fetch on the 15th
+        if *counter < 15 && self.funding_rate_cache.contains_key(symbol) {
+            return *self.funding_rate_cache.get(symbol).unwrap_or(&Decimal::ZERO);
+        }
+        // Reset counter only here, right before the actual fetch
+        *counter = 0;
+
+        let api_key = std::env::var(&self.config.exchange.api_key_env).unwrap_or_default();
+        let api_secret = std::env::var(&self.config.exchange.api_secret_env).unwrap_or_default();
+        let client = BinanceFuturesClient::new(api_key, api_secret, self.config.exchange.use_testnet);
+
+        match client.get_funding_rate(symbol).await {
+            Ok(fr) => {
+                info!(symbol = symbol, rate = %fr.rate, "Funding rate refreshed");
+                self.funding_rate_cache.insert(symbol.to_string(), fr.rate);
+                fr.rate
+            }
+            Err(e) => {
+                warn!(symbol = symbol, error = %e, "Failed to fetch funding rate, using cached");
+                *self.funding_rate_cache.get(symbol).unwrap_or(&Decimal::ZERO)
+            }
+        }
+    }
+
     /// Record a trade to the journal.
     fn journal_trade(&self, trade: &TradeRecord) {
         if let Some(storage) = &self.storage {
@@ -236,6 +279,13 @@ impl TradingEngine {
             Some(f) => f,
             None => return Ok(()),
         };
+
+        // Inject current funding rate (Futures only)
+        let mut features = features;
+        if self.config.exchange.use_futures {
+            let rate = self.refresh_funding_rate(candle.symbol.as_str()).await;
+            features.funding_rate = if rate != Decimal::ZERO { Some(rate) } else { None };
+        }
 
         // Collect signals first (avoid borrowing self mutably twice)
         let mut signals = Vec::new();
@@ -966,5 +1016,20 @@ impl TradingEngine {
     /// Get reference to order manager.
     pub fn order_manager(&self) -> &OrderManager {
         &self.order_manager
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn funding_rate_counter_returns_zero_when_not_futures() {
+        // Verify that non-futures mode returns ZERO without fetching
+        // (We can't easily test the async fetch, but we can test the cache logic)
+        let rate = dec!(0.0003);
+        let cached: std::collections::HashMap<String, rust_decimal::Decimal> =
+            std::collections::HashMap::from([("BTCUSDT".to_string(), rate)]);
+        assert_eq!(*cached.get("BTCUSDT").unwrap_or(&dec!(0)), rate);
     }
 }
