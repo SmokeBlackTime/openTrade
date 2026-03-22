@@ -347,6 +347,32 @@ impl TradingEngine {
             return Ok(());
         }
 
+        // R:R gate: require reward-to-risk >= 2.0 for all entry signals.
+        // Exit signals (Flat/Reduce) bypass this check.
+        if signal.direction.is_entry() {
+            if let (Some(entry), Some(sl), Some(tp)) = (
+                signal.entry_price,
+                signal.stop_loss,
+                signal.take_profit,
+            ) {
+                let risk = (entry - sl).abs();
+                let reward = (tp - entry).abs();
+                if risk > dec!(0) {
+                    let rr = reward / risk;
+                    if rr < dec!(2) {
+                        info!(
+                            rr = %rr,
+                            entry = %entry,
+                            stop = %sl,
+                            target = %tp,
+                            "R:R below 2.0 minimum, skipping signal"
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
         // Ensure qty meets both minimum notional AND minimum step size after truncation.
         // Binance Futures minimum notional varies by symbol (BTC=$100, others=$20).
         let exchange_min = if self.config.exchange.use_futures {
@@ -1045,5 +1071,32 @@ mod tests {
         }
         // After 30 candles: first fetch at candle 1, then every 15 → fetches at 1, 16 = 2 fetches
         assert_eq!(fetch_count, 2, "Should fetch twice in 30 candles (at 1 and 16)");
+    }
+
+    #[test]
+    fn rr_gate_logic() {
+        use rust_decimal_macros::dec;
+        // Helper to compute R:R
+        fn compute_rr(
+            entry: rust_decimal::Decimal,
+            stop: rust_decimal::Decimal,
+            target: rust_decimal::Decimal,
+        ) -> rust_decimal::Decimal {
+            let risk = (entry - stop).abs();
+            let reward = (target - entry).abs();
+            if risk == dec!(0) { dec!(0) } else { reward / risk }
+        }
+
+        // Long: entry=100, stop=98, target=106 => R:R = 3.0
+        let rr = compute_rr(dec!(100), dec!(98), dec!(106));
+        assert!(rr >= dec!(2), "3:1 should pass gate");
+
+        // Bad R:R: entry=100, stop=98, target=102 => R:R = 1.0
+        let rr_bad = compute_rr(dec!(100), dec!(98), dec!(102));
+        assert!(rr_bad < dec!(2), "1:1 should fail gate");
+
+        // Short: entry=100, stop=103, target=94 => R:R = 2.0 (borderline pass)
+        let rr_short = compute_rr(dec!(100), dec!(103), dec!(94));
+        assert!(rr_short >= dec!(2), "2:1 short should pass gate");
     }
 }
