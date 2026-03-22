@@ -247,6 +247,9 @@ mod tests {
             trend_strength: None,
             volume_sma_20: None,
             volume_ratio: None,
+            macd_signal_line: None,
+            macd_histogram: None,
+            funding_rate: None,
         }
     }
 }

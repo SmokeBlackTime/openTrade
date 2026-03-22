@@ -138,6 +138,9 @@ mod tests {
             trend_strength: Some(dec!(3.1)),
             volume_sma_20: Some(dec!(1000)),
             volume_ratio: Some(dec!(1.2)),
+            macd_signal_line: None,
+            macd_histogram: None,
+            funding_rate: None,
         }
     }
 
