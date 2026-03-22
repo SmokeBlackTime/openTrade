@@ -325,13 +325,20 @@ impl TradingEngine {
             let equity = self.portfolio.equity();
             // Safety check: don't exceed equity * max_leverage
             let max_allowed = equity * self.config.portfolio.max_portfolio_leverage;
-            // Also check if the required margin (notional / leverage) exceeds equity.
-            // Binance requires sufficient USDT balance to cover initial margin.
-            let required_margin = bumped_notional / self.config.risk.max_leverage;
-            if bumped_notional > max_allowed || required_margin > equity {
+            // Require margin with a 20% safety buffer to avoid "Margin insufficient" rejections.
+            // Use portfolio leverage (more conservative) rather than risk max leverage.
+            let leverage = self.config.portfolio.max_portfolio_leverage;
+            let required_margin = if leverage > dec!(0) {
+                bumped_notional / leverage
+            } else {
+                bumped_notional
+            };
+            // Add 20% safety buffer: Binance may need extra for fees/funding
+            let safe_margin = required_margin * dec!(1.2);
+            if bumped_notional > max_allowed || safe_margin > equity {
                 info!(
                     needed_notional = %bumped_notional,
-                    required_margin = %required_margin,
+                    required_margin = %safe_margin,
                     equity = %equity,
                     symbol = %signal.symbol,
                     "Equity too low for exchange minimum notional, skipping"
@@ -811,10 +818,28 @@ impl TradingEngine {
     pub async fn reconcile(&mut self) -> Result<(), OtError> {
         info!("Running position reconciliation");
 
-        // Check exchange balance
+        // Check exchange balance and sync equity
         match self.exchange.get_balance("USDT").await {
             Ok(balance) => {
                 info!(exchange_balance = %balance, "Exchange USDT balance");
+                // Sync tracked equity with actual exchange balance so position sizing
+                // uses real available funds (prevents "Margin insufficient" loops).
+                let current_equity = self.portfolio.equity();
+                let diff = if balance > current_equity {
+                    balance - current_equity
+                } else {
+                    current_equity - balance
+                };
+                // Only update if difference is > 5% to avoid micro-fluctuations
+                if diff > current_equity * dec!(0.05) {
+                    info!(
+                        old_equity = %current_equity,
+                        new_equity = %balance,
+                        "Syncing equity with exchange balance"
+                    );
+                    self.portfolio.update_equity(balance);
+                    self.risk_engine.update_equity(balance);
+                }
             }
             Err(e) => {
                 warn!(error = %e, "Failed to fetch exchange balance for reconciliation");

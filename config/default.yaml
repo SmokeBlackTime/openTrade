@@ -310,7 +310,7 @@ risk:
   max_orders_per_minute: 60
 
 portfolio:
-  initial_capital: "18"
+  initial_capital: "37"
   risk_per_trade_pct: "50"
   target_volatility_pct: "25"
   kelly_fraction: "1.0"
@@ -328,7 +328,7 @@ execution:
   reconciliation_interval_secs: 30
   smart_order_splitting: true
   max_split_orders: 10
-  min_order_size_usd: "100"
+  min_order_size_usd: "5"
 
 backtest:
   start_date: "2024-01-01"

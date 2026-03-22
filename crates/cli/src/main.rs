@@ -860,6 +860,32 @@ async fn cmd_live(
         }
     }
 
+    // Set leverage for all traded symbols at startup
+    if config.exchange.use_futures {
+        let leverage = config.risk.max_leverage.to_string().parse::<u32>().unwrap_or(10);
+        let futures_client = ot_exchange_binance::futures::BinanceFuturesClient::new(
+            config.resolve_api_key()?,
+            config.resolve_api_secret()?,
+            config.exchange.use_testnet,
+        );
+        for sym_cfg in &config.symbols {
+            match futures_client.set_leverage(sym_cfg.symbol.as_str(), leverage).await {
+                Ok(lev) => info!(symbol = %sym_cfg.symbol, leverage = lev, "Leverage configured"),
+                Err(e) => warn!(symbol = %sym_cfg.symbol, error = %e, "Failed to set leverage (using existing)"),
+            }
+        }
+        // Also set CROSSED margin mode (ignore if already set)
+        for sym_cfg in &config.symbols {
+            if let Err(e) = futures_client.set_margin_type(sym_cfg.symbol.as_str(), "CROSSED").await {
+                let msg = format!("{}", e);
+                if !msg.contains("-4046") {
+                    // -4046 means "No need to change margin type" (already CROSSED)
+                    warn!(symbol = %sym_cfg.symbol, error = %e, "Failed to set margin type");
+                }
+            }
+        }
+    }
+
     // Start user data stream for order updates (retry up to 3 times)
     let mut listen_key = None;
     for attempt in 1..=3 {
@@ -1046,16 +1072,29 @@ async fn cmd_live(
     if let Some(ref lk) = listen_key {
         let keepalive_key = lk.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+            // Send keepalive every 20 minutes (Binance expires keys after 60 min)
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(20 * 60));
             loop {
                 interval.tick().await;
-                if let Err(e) = keepalive_client
-                    .keepalive_user_data_stream(&keepalive_key)
-                    .await
-                {
-                    error!(error = %e, "Failed to keepalive user data stream");
-                } else {
-                    info!("User data stream keepalive sent");
+                let mut success = false;
+                for attempt in 1..=3u32 {
+                    match keepalive_client
+                        .keepalive_user_data_stream(&keepalive_key)
+                        .await
+                    {
+                        Ok(()) => {
+                            info!("User data stream keepalive sent");
+                            success = true;
+                            break;
+                        }
+                        Err(e) => {
+                            warn!(attempt, error = %e, "Keepalive failed, retrying");
+                            tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(attempt))).await;
+                        }
+                    }
+                }
+                if !success {
+                    error!("Failed to keepalive user data stream after 3 attempts — listen key may expire");
                 }
             }
         });
