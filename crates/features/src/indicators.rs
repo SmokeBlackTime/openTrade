@@ -102,6 +102,35 @@ pub fn macd(
     Some(fast_ema - slow_ema)
 }
 
+/// Full MACD: returns (macd_line, signal_line, histogram).
+/// signal_period is typically 9.
+/// Requires closes.len() >= slow + signal_period.
+pub fn macd_full(
+    closes: &[Decimal],
+    fast: usize,
+    slow: usize,
+    signal_period: usize,
+) -> Option<(Decimal, Decimal, Decimal)> {
+    if closes.len() < slow + signal_period {
+        return None;
+    }
+    // Build a series of MACD values for the last `signal_period + 1` points
+    // so we can compute EMA(signal_period) over them.
+    let needed = signal_period + slow; // min window
+    if closes.len() < needed {
+        return None;
+    }
+    let macd_series: Vec<Decimal> = (slow..=closes.len())
+        .filter_map(|i| macd(&closes[..i], fast, slow))
+        .collect();
+    if macd_series.len() < signal_period {
+        return None;
+    }
+    let macd_line = *macd_series.last()?;
+    let signal_line = ema(&macd_series, signal_period)?;
+    Some((macd_line, signal_line, macd_line - signal_line))
+}
+
 /// Bollinger Bands: (upper, middle, lower).
 pub fn bollinger_bands(
     closes: &[Decimal],
@@ -312,5 +341,22 @@ mod tests {
 
         let nine = decimal_sqrt(dec!(9)).unwrap();
         assert!((nine - dec!(3)).abs() < dec!(0.0001));
+    }
+
+    #[test]
+    fn macd_full_returns_three_components() {
+        let closes: Vec<Decimal> = (1..=50).map(|i| Decimal::from(i * 100)).collect();
+        let result = macd_full(&closes, 12, 26, 9);
+        assert!(result.is_some(), "macd_full should return Some with 50 candles");
+        let (line, signal, hist) = result.unwrap();
+        // histogram = line - signal
+        assert_eq!(hist, line - signal);
+    }
+
+    #[test]
+    fn macd_full_needs_enough_data() {
+        let closes: Vec<Decimal> = (1..=30).map(|i| Decimal::from(i)).collect();
+        // 26 + 9 = 35 required, only 30 given
+        assert!(macd_full(&closes, 12, 26, 9).is_none());
     }
 }
