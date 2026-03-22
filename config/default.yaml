@@ -23,23 +23,22 @@ exchange:
 
 symbols:
   - symbol: BTCUSDT
-    market_type: spot
+    market_type: usdt_futures
     timeframes: ["1m", "5m", "15m", "1h", "4h", "1d"]
     enabled: true
     max_position_usd: "500000"
     max_leverage: "10"
   - symbol: ETHUSDT
-    market_type: spot
+    market_type: usdt_futures
     timeframes: ["1m", "5m", "15m", "1h", "4h", "1d"]
     enabled: true
     max_position_usd: "300000"
     max_leverage: "10"
 
 strategies:
-  # ===== CORE STRATEGIES (all enabled, multi-symbol) =====
   - name: trend_btc
     strategy_type: trend_following
-    enabled: true
+    enabled: false
     symbols: ["BTCUSDT"]
     timeframe: "1h"
     params:
@@ -49,9 +48,9 @@ strategies:
       rsi_oversold: "30"
       atr_stop_multiplier: "2"
       atr_target_multiplier: "3"
-      cooldown: 5
+      cooldown: 20
       allow_short: true
-    capital_allocation_pct: "0.12"
+    capital_allocation_pct: "0.5"
 
   - name: trend_eth
     strategy_type: trend_following
@@ -65,13 +64,13 @@ strategies:
       rsi_oversold: "30"
       atr_stop_multiplier: "2"
       atr_target_multiplier: "3"
-      cooldown: 5
+      cooldown: 20
       allow_short: true
-    capital_allocation_pct: "0.08"
+    capital_allocation_pct: "0.5"
 
   - name: mean_rev_btc
     strategy_type: mean_reversion
-    enabled: true
+    enabled: false
     symbols: ["BTCUSDT"]
     timeframe: "1h"
     params:
@@ -84,7 +83,7 @@ strategies:
 
   - name: mean_rev_eth
     strategy_type: mean_reversion
-    enabled: true
+    enabled: false
     symbols: ["ETHUSDT"]
     timeframe: "1h"
     params:
@@ -97,7 +96,7 @@ strategies:
 
   - name: breakout_btc
     strategy_type: breakout
-    enabled: true
+    enabled: false
     symbols: ["BTCUSDT"]
     timeframe: "4h"
     params:
@@ -111,7 +110,7 @@ strategies:
 
   - name: breakout_eth
     strategy_type: breakout
-    enabled: true
+    enabled: false
     symbols: ["ETHUSDT"]
     timeframe: "4h"
     params:
@@ -123,10 +122,10 @@ strategies:
       allow_short: true
     capital_allocation_pct: "0.06"
 
-  # ===== ADVANCED AI-DRIVEN STRATEGIES (all enabled) =====
+  # ===== ADVANCED AI-DRIVEN STRATEGIES =====
   - name: funding_rate_btc
     strategy_type: funding_rate
-    enabled: true
+    enabled: false
     symbols: ["BTCUSDT"]
     timeframe: "1h"
     params:
@@ -142,7 +141,7 @@ strategies:
 
   - name: funding_rate_eth
     strategy_type: funding_rate
-    enabled: true
+    enabled: false
     symbols: ["ETHUSDT"]
     timeframe: "1h"
     params:
@@ -158,7 +157,7 @@ strategies:
 
   - name: imbalance_btc
     strategy_type: imbalance
-    enabled: true
+    enabled: false
     symbols: ["BTCUSDT"]
     timeframe: "1m"
     params:
@@ -172,7 +171,7 @@ strategies:
 
   - name: imbalance_eth
     strategy_type: imbalance
-    enabled: true
+    enabled: false
     symbols: ["ETHUSDT"]
     timeframe: "1m"
     params:
@@ -186,7 +185,7 @@ strategies:
 
   - name: regime_transition_btc
     strategy_type: regime_transition
-    enabled: true
+    enabled: false
     symbols: ["BTCUSDT"]
     timeframe: "4h"
     params:
@@ -200,7 +199,7 @@ strategies:
 
   - name: regime_transition_eth
     strategy_type: regime_transition
-    enabled: true
+    enabled: false
     symbols: ["ETHUSDT"]
     timeframe: "4h"
     params:
@@ -214,7 +213,7 @@ strategies:
 
   - name: cross_tf_btc
     strategy_type: cross_timeframe
-    enabled: true
+    enabled: false
     symbols: ["BTCUSDT"]
     timeframe: "15m"
     params:
@@ -226,7 +225,7 @@ strategies:
 
   - name: cross_tf_eth
     strategy_type: cross_timeframe
-    enabled: true
+    enabled: false
     symbols: ["ETHUSDT"]
     timeframe: "15m"
     params:
@@ -238,7 +237,7 @@ strategies:
 
   - name: anti_consensus_btc
     strategy_type: anti_consensus
-    enabled: true
+    enabled: false
     symbols: ["BTCUSDT"]
     timeframe: "1h"
     params:
@@ -252,7 +251,7 @@ strategies:
 
   - name: anti_consensus_eth
     strategy_type: anti_consensus
-    enabled: true
+    enabled: false
     symbols: ["ETHUSDT"]
     timeframe: "1h"
     params:
@@ -266,7 +265,7 @@ strategies:
 
   - name: risk_signal_btc
     strategy_type: risk_signal
-    enabled: true
+    enabled: false
     symbols: ["BTCUSDT"]
     timeframe: "1h"
     params:
@@ -280,7 +279,7 @@ strategies:
 
   - name: risk_signal_eth
     strategy_type: risk_signal
-    enabled: true
+    enabled: false
     symbols: ["ETHUSDT"]
     timeframe: "1h"
     params:
@@ -293,29 +292,29 @@ strategies:
     capital_allocation_pct: "0.04"
 
 risk:
-  max_position_size_usd: "500000"
+  max_position_size_usd: "500"
   max_leverage: "10"
-  max_daily_loss_pct: "5"
-  max_drawdown_pct: "20"
-  max_open_positions: 30
-  max_notional_exposure_usd: "5000000"
-  max_single_order_usd: "250000"
-  max_trades_per_day: 500
+  max_daily_loss_pct: "3"
+  max_drawdown_pct: "10"
+  max_open_positions: 2
+  max_notional_exposure_usd: "500"
+  max_single_order_usd: "200"
+  max_trades_per_day: 6
   max_correlated_exposure_pct: "60"
   stale_data_max_age_secs: 15
   max_spread_bps: "30"
-  min_confidence_threshold: "0.5"
+  min_confidence_threshold: "0.65"
   extreme_volatility_multiplier: "4"
   max_order_rejections_per_hour: 20
-  max_orders_per_minute: 60
+  max_orders_per_minute: 10
 
 portfolio:
   initial_capital: "37"
-  risk_per_trade_pct: "50"
-  target_volatility_pct: "25"
-  kelly_fraction: "1.0"
-  max_portfolio_leverage: "8"
-  concentration_limit_pct: "90"
+  risk_per_trade_pct: "5"
+  target_volatility_pct: "10"
+  kelly_fraction: "0.25"
+  max_portfolio_leverage: "10"
+  concentration_limit_pct: "60"
   correlation_lookback_bars: 200
   rebalance_threshold_pct: "3"
 
@@ -388,5 +387,5 @@ neural_brain:
   collective_thinking: true
   consensus_threshold: 0.5
   memory_db_path: "./data/neural_memory.db"
-  personality: aggressive    # max intelligence, fast adaptation, high risk appetite
-  analysis_interval: 2       # deep analysis every 2 candles (maximum frequency)
+  personality: conservative
+  analysis_interval: 15      # deep analysis every 15 candles (15 min on 1m tf)

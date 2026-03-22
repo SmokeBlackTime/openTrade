@@ -28,6 +28,7 @@ pub struct BinanceOrderResponse {
     pub price: String,
     pub orig_qty: String,
     pub executed_qty: String,
+    #[serde(alias = "cumQuote", default)]
     pub cummulative_quote_qty: String,
     pub status: String,
     pub r#type: String,
@@ -175,7 +176,7 @@ pub struct WsExecutionReport {
     pub last_filled_price: String,
     #[serde(rename = "z")]
     pub cumulative_filled_qty: String,
-    #[serde(rename = "Z")]
+    #[serde(rename = "Z", default)]
     pub cumulative_quote_qty: String,
     #[serde(rename = "n")]
     pub commission: String,
@@ -234,7 +235,7 @@ pub struct WsFuturesOrder {
     pub last_filled_price: String,
     #[serde(rename = "z")]
     pub cumulative_filled_qty: String,
-    #[serde(rename = "Z")]
+    #[serde(rename = "Z", default)]
     pub cumulative_quote_qty: String,
     #[serde(rename = "n")]
     pub commission: String,

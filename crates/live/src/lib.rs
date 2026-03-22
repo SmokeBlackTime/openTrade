@@ -299,9 +299,15 @@ impl TradingEngine {
         }
 
         // Ensure qty meets both minimum notional AND minimum step size after truncation.
-        // Binance Futures requires notional >= 100 USDT; Spot requires ~10 USDT (varies by pair).
-        // Use whichever is higher: the configured min OR the exchange minimum for the market type.
-        let exchange_min = if self.config.exchange.use_futures { dec!(100) } else { dec!(10) };
+        // Binance Futures minimum notional varies by symbol (BTC=$100, others=$20).
+        let exchange_min = if self.config.exchange.use_futures {
+            match signal.symbol.as_str() {
+                "BTCUSDT" => dec!(100),
+                _ => dec!(20),
+            }
+        } else {
+            dec!(10)
+        };
         let min_notional = self.config.execution.min_order_size_usd.max(exchange_min);
         let min_step = match signal.symbol.as_str() {
             "BTCUSDT" => dec!(0.001),   // 3 decimals
