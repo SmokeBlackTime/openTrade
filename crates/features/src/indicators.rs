@@ -105,21 +105,21 @@ pub fn macd(
 /// Full MACD: returns (macd_line, signal_line, histogram).
 /// signal_period is typically 9.
 /// Requires closes.len() >= slow + signal_period.
+/// O(n * slow) — acceptable for single candle-per-tick calls on buffers up to 500.
 pub fn macd_full(
     closes: &[Decimal],
     fast: usize,
     slow: usize,
     signal_period: usize,
 ) -> Option<(Decimal, Decimal, Decimal)> {
+    if fast >= slow {
+        return None;
+    }
     if closes.len() < slow + signal_period {
         return None;
     }
     // Build a series of MACD values for the last `signal_period + 1` points
     // so we can compute EMA(signal_period) over them.
-    let needed = signal_period + slow; // min window
-    if closes.len() < needed {
-        return None;
-    }
     let macd_series: Vec<Decimal> = (slow..=closes.len())
         .filter_map(|i| macd(&closes[..i], fast, slow))
         .collect();
@@ -349,7 +349,18 @@ mod tests {
         let result = macd_full(&closes, 12, 26, 9);
         assert!(result.is_some(), "macd_full should return Some with 50 candles");
         let (line, signal, hist) = result.unwrap();
-        // histogram = line - signal
+        // Verify histogram is computed correctly
+        assert_eq!(hist, line - signal);
+    }
+
+    #[test]
+    fn macd_full_boundary_min_data() {
+        // Test with exactly slow + signal_period candles (26 + 9 = 35)
+        let closes: Vec<Decimal> = (1..=35).map(|i| Decimal::from(i * 100)).collect();
+        let result = macd_full(&closes, 12, 26, 9);
+        assert!(result.is_some(), "macd_full should return Some with exactly 35 candles");
+        let (line, signal, hist) = result.unwrap();
+        // Verify histogram computation
         assert_eq!(hist, line - signal);
     }
 
@@ -358,5 +369,13 @@ mod tests {
         let closes: Vec<Decimal> = (1..=30).map(|i| Decimal::from(i)).collect();
         // 26 + 9 = 35 required, only 30 given
         assert!(macd_full(&closes, 12, 26, 9).is_none());
+    }
+
+    #[test]
+    fn macd_full_fast_ge_slow_invalid() {
+        let closes: Vec<Decimal> = (1..=50).map(|i| Decimal::from(i)).collect();
+        // fast >= slow should return None
+        assert!(macd_full(&closes, 26, 26, 9).is_none());
+        assert!(macd_full(&closes, 30, 26, 9).is_none());
     }
 }
