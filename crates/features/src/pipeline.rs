@@ -19,6 +19,8 @@ pub struct FeatureRow {
     pub ema_12: Option<Decimal>,
     pub ema_26: Option<Decimal>,
     pub macd: Option<Decimal>,
+    pub macd_signal_line: Option<Decimal>,
+    pub macd_histogram: Option<Decimal>,
     pub rsi_14: Option<Decimal>,
     // Volatility
     pub atr_14: Option<Decimal>,
@@ -33,6 +35,8 @@ pub struct FeatureRow {
     pub trend_strength: Option<Decimal>,
     pub volume_sma_20: Option<Decimal>,
     pub volume_ratio: Option<Decimal>,
+    // Futures context (set externally after compute_features)
+    pub funding_rate: Option<Decimal>,
 }
 
 /// Compute a feature row from a buffer of candles.
@@ -72,6 +76,10 @@ pub fn compute_features(candles: &[Candle]) -> Option<FeatureRow> {
     let ema_12 = indicators::ema(&closes, 12);
     let ema_26 = indicators::ema(&closes, 26);
     let macd = indicators::macd(&closes, 12, 26);
+    let (macd_signal_line, macd_histogram) = match indicators::macd_full(&closes, 12, 26, 9) {
+        Some((_, sig, hist)) => (Some(sig), Some(hist)),
+        None => (None, None),
+    };
     let rsi_14 = indicators::rsi(&closes, 14);
     let atr_14 = indicators::atr(&highs, &lows, &closes, 14);
 
@@ -141,6 +149,8 @@ pub fn compute_features(candles: &[Candle]) -> Option<FeatureRow> {
         ema_12,
         ema_26,
         macd,
+        macd_signal_line,
+        macd_histogram,
         rsi_14,
         atr_14,
         bb_upper,
@@ -153,8 +163,10 @@ pub fn compute_features(candles: &[Candle]) -> Option<FeatureRow> {
         trend_strength,
         volume_sma_20,
         volume_ratio,
+        funding_rate: None, // set by TradingEngine after fetching from exchange
     })
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -202,5 +214,21 @@ mod tests {
         assert!(row.sma_50.is_some());
         assert!(row.rsi_14.is_some());
         assert!(row.macd.is_some());
+    }
+
+    #[test]
+    fn compute_features_includes_macd_histogram() {
+        let candles = make_candles(60, dec!(50000));
+        let row = compute_features(&candles).unwrap();
+        // With trending prices macd_histogram should be present
+        assert!(row.macd_histogram.is_some(), "macd_histogram should be computed");
+        assert!(row.macd_signal_line.is_some(), "macd_signal_line should be computed");
+    }
+
+    #[test]
+    fn feature_row_funding_rate_defaults_none() {
+        let candles = make_candles(60, dec!(50000));
+        let row = compute_features(&candles).unwrap();
+        assert!(row.funding_rate.is_none(), "funding_rate starts as None (set externally)");
     }
 }
