@@ -1111,8 +1111,35 @@ async fn cmd_live(
         warn!(error = %e, "Initial reconciliation failed");
     }
 
+    // Shutdown signal: first Ctrl+C triggers graceful shutdown,
+    // second Ctrl+C (or 5s timeout) force-exits the process.
+    let shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let shutdown_clone = shutdown.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        println!("\nShutting down (press Ctrl+C again to force quit)...");
+        shutdown_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+
+        // Give 5 seconds for graceful shutdown, then force exit
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("Force shutdown!");
+                std::process::exit(1);
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
+                eprintln!("Shutdown timeout — force exit.");
+                std::process::exit(1);
+            }
+        }
+    });
+
     // Main event loop
     loop {
+        // Check shutdown flag before blocking on long operations
+        if shutdown.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+
         tokio::select! {
             Some(candle) = merged_rx.recv() => {
                 info!(
@@ -1162,10 +1189,6 @@ async fn cmd_live(
                 if let Err(e) = engine.reconcile().await {
                     warn!(error = %e, "Reconciliation error");
                 }
-            }
-            _ = tokio::signal::ctrl_c() => {
-                println!("\nGraceful shutdown...");
-                break;
             }
         }
     }
