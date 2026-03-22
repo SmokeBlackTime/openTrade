@@ -30,6 +30,23 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
+/// Returns the next higher timeframe for multi-TF confirmation.
+fn higher_timeframe(tf: ot_types::market::Timeframe) -> Option<ot_types::market::Timeframe> {
+    use ot_types::market::Timeframe::*;
+    match tf {
+        M1  => Some(M15),
+        M5  => Some(H1),
+        M15 => Some(H4),
+        H1  => Some(H4),
+        H4  => Some(D1),
+        D1  => None,
+    }
+}
+
+/// Simple directional bias from the higher timeframe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrendBias { Bullish, Bearish, Neutral }
+
 /// The core trading engine.
 pub struct TradingEngine {
     config: AppConfig,
@@ -370,6 +387,32 @@ impl TradingEngine {
                         return Ok(());
                     }
                 }
+            }
+        }
+
+        // Multi-timeframe confirmation: entry direction must not contradict higher TF.
+        // Neutral higher TF = allow. Only block if directly opposed.
+        if signal.direction.is_entry() {
+            let htf_bias = self.higher_tf_bias(
+                signal.symbol.as_str(),
+                signal.timeframe,
+            );
+            match (signal.direction, htf_bias) {
+                (SignalDirection::Long, Some(TrendBias::Bearish)) => {
+                    info!(
+                        symbol = %signal.symbol,
+                        "Higher TF bearish, skipping long entry"
+                    );
+                    return Ok(());
+                }
+                (SignalDirection::Short, Some(TrendBias::Bullish)) => {
+                    info!(
+                        symbol = %signal.symbol,
+                        "Higher TF bullish, skipping short entry"
+                    );
+                    return Ok(());
+                }
+                _ => {} // Agree, Neutral, or no data → allow
             }
         }
 
@@ -1042,6 +1085,28 @@ impl TradingEngine {
     pub fn order_manager(&self) -> &OrderManager {
         &self.order_manager
     }
+
+    /// Compute trend bias from the higher timeframe candle buffer.
+    /// Returns None if no buffer or insufficient data.
+    fn higher_tf_bias(&self, symbol: &str, current_tf: ot_types::market::Timeframe) -> Option<TrendBias> {
+        let htf = higher_timeframe(current_tf)?;
+        let key = format!("{}:{}", symbol, htf);
+        let buffer = self.candle_buffers.get(&key)?;
+        if buffer.len() < 52 {
+            return None;
+        }
+        let candles: Vec<Candle> = buffer.iter().cloned().collect();
+        let features = compute_features(&candles)?;
+        let sma_fast = features.sma_20?;
+        let sma_slow = features.sma_50?;
+        if sma_fast > sma_slow {
+            Some(TrendBias::Bullish)
+        } else if sma_fast < sma_slow {
+            Some(TrendBias::Bearish)
+        } else {
+            Some(TrendBias::Neutral)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1098,5 +1163,17 @@ mod tests {
         // Short: entry=100, stop=103, target=94 => R:R = 2.0 (borderline pass)
         let rr_short = compute_rr(dec!(100), dec!(103), dec!(94));
         assert!(rr_short >= dec!(2), "2:1 short should pass gate");
+    }
+
+    #[test]
+    fn higher_timeframe_mapping() {
+        use crate::higher_timeframe;
+        use ot_types::market::Timeframe;
+        assert_eq!(higher_timeframe(Timeframe::M1), Some(Timeframe::M15));
+        assert_eq!(higher_timeframe(Timeframe::M5), Some(Timeframe::H1));
+        assert_eq!(higher_timeframe(Timeframe::M15), Some(Timeframe::H4));
+        assert_eq!(higher_timeframe(Timeframe::H1), Some(Timeframe::H4));
+        assert_eq!(higher_timeframe(Timeframe::H4), Some(Timeframe::D1));
+        assert_eq!(higher_timeframe(Timeframe::D1), None);
     }
 }
