@@ -43,13 +43,22 @@ impl MarketAnalyst {
         features: &FeatureRow,
         regime: &str,
     ) -> Option<MarketAnalysis> {
+        let funding_rate_str = features.funding_rate
+            .map(|r| format!("{:.6}", r))
+            .unwrap_or_else(|| "N/A".to_string());
+        let macd_hist_str = features.macd_histogram
+            .map(|h| format!("{:.2}", h))
+            .unwrap_or_else(|| "N/A".to_string());
+
         let features_summary = format!(
-            "Close: {}, RSI(14): {:?}, MACD: {:?}, SMA20: {:?}, SMA50: {:?}, \
-             ATR(14): {:?}, BB Width: {:?}, Vol(20): {:?}, Trend: {:?}, \
-             Volume Ratio: {:?}, Return(1): {:?}, Return(5): {:?}",
+            "Close: {}, RSI(14): {:?}, MACD: {:?}, MACD_hist: {} (+ = bullish momentum), \
+             SMA20: {:?}, SMA50: {:?}, ATR(14): {:?}, BB_Width: {:?}, Vol(20): {:?}, \
+             Trend: {:?}, VolRatio: {:?}, Ret1: {:?}, Ret5: {:?}, \
+             FundingRate: {} (positive = longs paying = bearish pressure, negative = shorts paying = bullish pressure)",
             features.close,
             features.rsi_14,
             features.macd,
+            macd_hist_str,
             features.sma_20,
             features.sma_50,
             features.atr_14,
@@ -59,6 +68,7 @@ impl MarketAnalyst {
             features.volume_ratio,
             features.return_1,
             features.return_5,
+            funding_rate_str,
         );
 
         let system = "You are a quantitative market analyst. Analyze technical indicators \
@@ -111,12 +121,15 @@ Respond with JSON:
         features: &FeatureRow,
     ) -> Option<(String, f64)> {
         let prompt = format!(
-            "Quick assessment for {}: RSI={:?}, Trend={:?}, MACD={:?}, Vol={:?}. \
+            "Quick assessment for {}: RSI={:?}, Trend={:?}, MACD={:?}, MACD_hist={:?}, \
+             FundingRate={:?}, Vol={:?}. \
              JSON: {{\"direction\": \"long|short|hold\", \"confidence\": 0.0-1.0}}",
             symbol,
             features.rsi_14,
             features.trend_strength,
             features.macd,
+            features.macd_histogram,
+            features.funding_rate,
             features.realized_vol_20,
         );
 
