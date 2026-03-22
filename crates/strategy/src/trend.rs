@@ -69,21 +69,24 @@ impl TrendFollowing {
         }
     }
 
-    fn compute_confidence(&self, features: &FeatureRow) -> Decimal {
-        let mut score = dec!(0.5);
+    fn compute_confidence(&self, features: &FeatureRow, is_long: bool) -> Decimal {
+        let mut score = dec!(0.40); // lowered base from 0.50
 
-        // RSI contribution
+        // RSI confirmation
         if let Some(rsi) = features.rsi_14 {
-            if rsi > dec!(40) && rsi < dec!(60) {
-                // Neutral RSI = less confidence
-            } else {
-                score += dec!(0.1);
+            if (is_long && rsi < dec!(60) && rsi > dec!(40))
+                || (!is_long && rsi > dec!(40) && rsi < dec!(60))
+            {
+                // Neutral RSI — no boost
+            } else if (is_long && rsi < dec!(70)) || (!is_long && rsi > dec!(30)) {
+                score += dec!(0.10);
             }
         }
 
-        // Trend strength contribution
+        // Trend strength in direction
         if let Some(ts) = features.trend_strength {
-            if ts.abs() > self.min_trend_strength {
+            let directional_ts = if is_long { ts } else { -ts };
+            if directional_ts > self.min_trend_strength {
                 score += dec!(0.15);
             }
         }
@@ -91,18 +94,28 @@ impl TrendFollowing {
         // Volume confirmation
         if let Some(vr) = features.volume_ratio {
             if vr > dec!(1.2) {
-                score += dec!(0.1);
+                score += dec!(0.10);
             }
         }
 
-        // Bollinger band width (low vol squeeze -> potential breakout)
+        // MACD histogram direction (new)
+        if let Some(hist) = features.macd_histogram {
+            let confirming = if is_long { hist > dec!(0) } else { hist < dec!(0) };
+            if confirming {
+                score += dec!(0.15);
+            } else {
+                score -= dec!(0.10); // penalize counter-direction histogram
+            }
+        }
+
+        // BB squeeze (low vol → potential breakout)
         if let Some(bbw) = features.bb_width {
             if bbw < dec!(0.02) {
                 score += dec!(0.05);
             }
         }
 
-        score.min(dec!(0.95))
+        score.max(dec!(0)).min(dec!(0.95))
     }
 }
 
@@ -204,11 +217,9 @@ impl Strategy for TrendFollowing {
             }
         }
 
-        // Entry signals
-        let confidence = self.compute_confidence(features);
-
         // Long entry
         if is_uptrend && price_above_fast && rsi < self.rsi_overbought && !has_position {
+            let confidence = self.compute_confidence(features, true);
             self.bars_since_signal = 0;
             let stop = candle.close - atr * self.atr_stop_multiplier;
             let target = candle.close + atr * self.atr_target_multiplier;
@@ -249,6 +260,7 @@ impl Strategy for TrendFollowing {
             && rsi > self.rsi_oversold
             && !has_position
         {
+            let confidence = self.compute_confidence(features, false);
             self.bars_since_signal = 0;
             let stop = candle.close + atr * self.atr_stop_multiplier;
             let target = candle.close - atr * self.atr_target_multiplier;
@@ -320,5 +332,65 @@ mod tests {
         assert_eq!(s.name(), "trend_following");
         assert_eq!(s.fast_period, 20);
         assert_eq!(s.slow_period, 50);
+    }
+
+    #[test]
+    fn confidence_macd_histogram_bonus() {
+        use ot_features::pipeline::FeatureRow;
+        use rust_decimal_macros::dec;
+        let params = std::collections::HashMap::new();
+        let s = TrendFollowing::new(&params);
+
+        // Build a minimal FeatureRow
+        let base_row = FeatureRow {
+            timestamp_ms: 0,
+            close: dec!(50000),
+            return_1: None, return_5: None, log_return_1: None,
+            sma_20: None, sma_50: None, ema_12: None, ema_26: None,
+            macd: None, macd_signal_line: None,
+            rsi_14: None, atr_14: None,
+            bb_upper: None, bb_middle: None, bb_lower: None,
+            realized_vol_20: None, bb_width: None,
+            price_vs_sma20: None, price_vs_sma50: None,
+            trend_strength: None, volume_sma_20: None, volume_ratio: None,
+            funding_rate: None,
+            macd_histogram: Some(dec!(50)), // positive = bullish
+        };
+
+        let conf_confirming = s.compute_confidence(&base_row, true);
+
+        let mut opposing_row = base_row.clone();
+        opposing_row.macd_histogram = Some(dec!(-50)); // negative = bearish
+        let conf_opposing = s.compute_confidence(&opposing_row, true);
+
+        assert!(
+            conf_confirming > conf_opposing,
+            "Confirming histogram ({}) should give higher confidence than opposing ({})",
+            conf_confirming, conf_opposing
+        );
+    }
+
+    #[test]
+    fn confidence_base_score_is_lower() {
+        use ot_features::pipeline::FeatureRow;
+        use rust_decimal_macros::dec;
+        let params = std::collections::HashMap::new();
+        let s = TrendFollowing::new(&params);
+
+        // With no features at all, base score should be 0.40
+        let empty_row = FeatureRow {
+            timestamp_ms: 0, close: dec!(50000),
+            return_1: None, return_5: None, log_return_1: None,
+            sma_20: None, sma_50: None, ema_12: None, ema_26: None,
+            macd: None, macd_signal_line: None, rsi_14: None, atr_14: None,
+            bb_upper: None, bb_middle: None, bb_lower: None,
+            realized_vol_20: None, bb_width: None,
+            price_vs_sma20: None, price_vs_sma50: None,
+            trend_strength: None, volume_sma_20: None, volume_ratio: None,
+            funding_rate: None, macd_histogram: None,
+        };
+
+        let conf = s.compute_confidence(&empty_row, true);
+        assert_eq!(conf, dec!(0.40), "Base score with no features should be 0.40");
     }
 }
